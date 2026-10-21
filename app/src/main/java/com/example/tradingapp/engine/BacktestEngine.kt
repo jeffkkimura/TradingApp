@@ -3,12 +3,14 @@ package com.example.tradingapp.engine
 import com.example.tradingapp.data.HistoricalDataRepository
 import com.example.tradingapp.model.BacktestSummary
 import com.example.tradingapp.model.ClosedTrade
+import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketBar
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TradePosition
 import com.example.tradingapp.model.TrialResult
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.sqrt
 
 object BacktestEngine {
@@ -22,7 +24,8 @@ object BacktestEngine {
         strategy: AITradingStrategy = AITradingStrategy(),
         trialId: Int = 1,
         startDate: String = bars.firstOrNull()?.date ?: "2000-01-03",
-        endDate: String = bars.lastOrNull()?.date ?: "2025-01-01"
+        endDate: String = bars.lastOrNull()?.date ?: "2025-01-01",
+        newsSentiment: MacroNewsSentiment = MacroNewsSentiment()
     ): TrialResult {
         if (bars.isEmpty()) {
             return TrialResult(
@@ -91,21 +94,22 @@ object BacktestEngine {
 
                     cash += grossProceeds - COMMISSION_PER_TRADE
 
-                    closedTrades.add(
-                        ClosedTrade(
-                            id = pos.id,
-                            symbol = pos.symbol,
-                            type = pos.type,
-                            entryPrice = pos.entryPrice,
-                            exitPrice = exitPrice,
-                            quantity = pos.quantity,
-                            pnl = pnl,
-                            returnPct = returnPct,
-                            entryDate = pos.entryDate,
-                            exitDate = bar.date,
-                            exitReason = exitReason
-                        )
+                    val closed = ClosedTrade(
+                        id = pos.id,
+                        symbol = pos.symbol,
+                        type = pos.type,
+                        entryPrice = pos.entryPrice,
+                        exitPrice = exitPrice,
+                        quantity = pos.quantity,
+                        pnl = pnl,
+                        returnPct = returnPct,
+                        entryDate = pos.entryDate,
+                        exitDate = bar.date,
+                        exitReason = exitReason,
+                        mlScoreAtEntry = pos.mlScoreAtEntry
                     )
+                    closedTrades.add(closed)
+                    strategy.mlOptimizer.onTradeClosed(closed, bar, newsSentiment, bar.multiIndex)
                     currentPosition = null
                 }
             }
@@ -116,7 +120,8 @@ object BacktestEngine {
                 currentBar = bar,
                 accountBalance = cash + (currentPosition?.unrealizedPnl ?: 0.0),
                 activePositionsCount = openPosCount,
-                hasOpenPosition = (currentPosition != null)
+                hasOpenPosition = (currentPosition != null),
+                newsSentiment = newsSentiment
             )
 
             // 3. Process BUY / SELL Signal Executions
@@ -135,7 +140,8 @@ object BacktestEngine {
                         stopLoss = signal.stopLoss,
                         takeProfit = signal.takeProfit,
                         entryDate = bar.date,
-                        currentPrice = bar.close
+                        currentPrice = bar.close,
+                        mlScoreAtEntry = signal.confidenceScore
                     )
                 }
             } else if (signal.action == TradeAction.SELL && currentPosition != null) {
@@ -147,21 +153,22 @@ object BacktestEngine {
 
                 cash += grossProceeds - COMMISSION_PER_TRADE
 
-                closedTrades.add(
-                    ClosedTrade(
-                        id = pos.id,
-                        symbol = pos.symbol,
-                        type = pos.type,
-                        entryPrice = pos.entryPrice,
-                        exitPrice = exitPriceWithSlippage,
-                        quantity = pos.quantity,
-                        pnl = pnl,
-                        returnPct = returnPct,
-                        entryDate = pos.entryDate,
-                        exitDate = bar.date,
-                        exitReason = "AI Reversal Signal"
-                    )
+                val closed = ClosedTrade(
+                    id = pos.id,
+                    symbol = pos.symbol,
+                    type = pos.type,
+                    entryPrice = pos.entryPrice,
+                    exitPrice = exitPriceWithSlippage,
+                    quantity = pos.quantity,
+                    pnl = pnl,
+                    returnPct = returnPct,
+                    entryDate = pos.entryDate,
+                    exitDate = bar.date,
+                    exitReason = "AI Reversal Signal",
+                    mlScoreAtEntry = pos.mlScoreAtEntry
                 )
+                closedTrades.add(closed)
+                strategy.mlOptimizer.onTradeClosed(closed, bar, newsSentiment, bar.multiIndex)
                 currentPosition = null
             }
 
@@ -190,21 +197,22 @@ object BacktestEngine {
             val pnl = grossProceeds - (pos.quantity * pos.entryPrice) - COMMISSION_PER_TRADE
             cash += grossProceeds - COMMISSION_PER_TRADE
 
-            closedTrades.add(
-                ClosedTrade(
-                    id = pos.id,
-                    symbol = pos.symbol,
-                    type = pos.type,
-                    entryPrice = pos.entryPrice,
-                    exitPrice = lastBar.close,
-                    quantity = pos.quantity,
-                    pnl = pnl,
-                    returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0,
-                    entryDate = pos.entryDate,
-                    exitDate = lastBar.date,
-                    exitReason = "Backtest Window Close"
-                )
+            val closed = ClosedTrade(
+                id = pos.id,
+                symbol = pos.symbol,
+                type = pos.type,
+                entryPrice = pos.entryPrice,
+                exitPrice = lastBar.close,
+                quantity = pos.quantity,
+                pnl = pnl,
+                returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0,
+                entryDate = pos.entryDate,
+                exitDate = lastBar.date,
+                exitReason = "Backtest Window Close",
+                mlScoreAtEntry = pos.mlScoreAtEntry
             )
+            closedTrades.add(closed)
+            strategy.mlOptimizer.onTradeClosed(closed, lastBar, newsSentiment, lastBar.multiIndex)
         }
 
         val finalEquity = cash

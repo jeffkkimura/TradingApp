@@ -3,11 +3,15 @@ package com.example.tradingapp.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tradingapp.data.HistoricalDataRepository
+import com.example.tradingapp.data.NewsRepository
 import com.example.tradingapp.engine.AITradingStrategy
 import com.example.tradingapp.engine.BacktestEngine
 import com.example.tradingapp.model.BacktestSummary
 import com.example.tradingapp.model.ClosedTrade
 import com.example.tradingapp.model.EpochPerformance
+import com.example.tradingapp.model.MLModelWeights
+import com.example.tradingapp.model.MLOptimizationMetrics
+import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketBar
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TradePosition
@@ -37,6 +41,12 @@ data class TradingUiState(
     val todaySignal: TradeSignal? = null,
     val equityHistory: List<Pair<String, Double>> = emptyList(),
 
+    // Macro News & ML State
+    val activeNewsSentiment: MacroNewsSentiment = NewsRepository.getDefaultMacroNews(),
+    val newsPresets: List<MacroNewsSentiment> = NewsRepository.getMacroNewsPresets(),
+    val mlModelWeights: MLModelWeights = MLModelWeights(),
+    val mlMetrics: MLOptimizationMetrics = MLOptimizationMetrics(),
+
     // Strategy & Historical Regimes
     val epochSummaries: List<EpochPerformance> = emptyList()
 )
@@ -58,11 +68,12 @@ class TradingViewModel : ViewModel() {
                 currentBarIndex = startIdx,
                 currentBar = initialBar,
                 equityHistory = if (initialBar != null) listOf(Pair(initialBar.date, 100_000.0)) else emptyList(),
-                epochSummaries = HistoricalDataRepository.getHistoricalEpochSummaries()
+                epochSummaries = HistoricalDataRepository.getHistoricalEpochSummaries(),
+                mlModelWeights = aiStrategy.mlOptimizer.weights,
+                mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics()
             )
         }
 
-        // Run an initial quick backtest summary on launch
         viewModelScope.launch(Dispatchers.Default) {
             run100TrialTest()
         }
@@ -70,6 +81,24 @@ class TradingViewModel : ViewModel() {
 
     fun selectTab(tabIndex: Int) {
         _uiState.update { it.copy(selectedTab = tabIndex) }
+    }
+
+    fun selectNewsPreset(news: MacroNewsSentiment) {
+        _uiState.update { it.copy(activeNewsSentiment = news) }
+        evaluateTodaySignal()
+    }
+
+    private fun evaluateTodaySignal() {
+        val state = _uiState.value
+        val bar = state.currentBar ?: return
+        val signal = aiStrategy.evaluateSignal(
+            currentBar = bar,
+            accountBalance = state.portfolioCash + state.activePositions.sumOf { it.unrealizedPnl },
+            activePositionsCount = state.activePositions.size,
+            hasOpenPosition = state.activePositions.isNotEmpty(),
+            newsSentiment = state.activeNewsSentiment
+        )
+        _uiState.update { it.copy(todaySignal = signal) }
     }
 
     fun run100TrialTest() {
@@ -84,6 +113,7 @@ class TradingViewModel : ViewModel() {
         }
 
         viewModelScope.launch(Dispatchers.Default) {
+            val news = _uiState.value.activeNewsSentiment
             val summary = BacktestEngine.run100TrialMonteCarloBacktest { completed, total, currentTrial ->
                 val progressPct = ((completed.toDouble() / total) * 100).toInt()
                 _uiState.update { state ->
@@ -99,7 +129,9 @@ class TradingViewModel : ViewModel() {
                     state.copy(
                         isTestRunning = false,
                         testProgress = 100,
-                        backtestSummary = summary
+                        backtestSummary = summary,
+                        mlModelWeights = aiStrategy.mlOptimizer.weights,
+                        mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics()
                     )
                 }
             }
@@ -142,31 +174,34 @@ class TradingViewModel : ViewModel() {
                 val pnl = proceeds - (pos.quantity * pos.entryPrice) - 0.50
                 cash += proceeds - 0.50
 
-                closedTradeList.add(
-                    0, ClosedTrade(
-                        id = pos.id,
-                        symbol = pos.symbol,
-                        type = pos.type,
-                        entryPrice = pos.entryPrice,
-                        exitPrice = exitPrice,
-                        quantity = pos.quantity,
-                        pnl = pnl,
-                        returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0,
-                        entryDate = pos.entryDate,
-                        exitDate = bar.date,
-                        exitReason = reason
-                    )
+                val closed = ClosedTrade(
+                    id = pos.id,
+                    symbol = pos.symbol,
+                    type = pos.type,
+                    entryPrice = pos.entryPrice,
+                    exitPrice = exitPrice,
+                    quantity = pos.quantity,
+                    pnl = pnl,
+                    returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0,
+                    entryDate = pos.entryDate,
+                    exitDate = bar.date,
+                    exitReason = reason,
+                    mlScoreAtEntry = pos.mlScoreAtEntry
                 )
+
+                closedTradeList.add(0, closed)
+                aiStrategy.mlOptimizer.onTradeClosed(closed, bar, state.activeNewsSentiment, bar.multiIndex)
                 iterator.remove()
             }
         }
 
-        // 2. Evaluate daily signal
+        // 2. Evaluate daily signal with active news sentiment
         val signal = aiStrategy.evaluateSignal(
             currentBar = bar,
             accountBalance = cash + activePosList.sumOf { it.unrealizedPnl },
             activePositionsCount = activePosList.size,
-            hasOpenPosition = activePosList.isNotEmpty()
+            hasOpenPosition = activePosList.isNotEmpty(),
+            newsSentiment = state.activeNewsSentiment
         )
 
         // 3. Execute BUY or SELL signal
@@ -184,7 +219,8 @@ class TradingViewModel : ViewModel() {
                         stopLoss = signal.stopLoss,
                         takeProfit = signal.takeProfit,
                         entryDate = bar.date,
-                        currentPrice = bar.close
+                        currentPrice = bar.close,
+                        mlScoreAtEntry = signal.confidenceScore
                     )
                 )
             }
@@ -194,21 +230,22 @@ class TradingViewModel : ViewModel() {
             val pnl = proceeds - (pos.quantity * pos.entryPrice) - 0.50
             cash += proceeds - 0.50
 
-            closedTradeList.add(
-                0, ClosedTrade(
-                    id = pos.id,
-                    symbol = pos.symbol,
-                    type = pos.type,
-                    entryPrice = pos.entryPrice,
-                    exitPrice = bar.close * 0.9998,
-                    quantity = pos.quantity,
-                    pnl = pnl,
-                    returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0,
-                    entryDate = pos.entryDate,
-                    exitDate = bar.date,
-                    exitReason = "AI Sell Reversal"
-                )
+            val closed = ClosedTrade(
+                id = pos.id,
+                symbol = pos.symbol,
+                type = pos.type,
+                entryPrice = pos.entryPrice,
+                exitPrice = bar.close * 0.9998,
+                quantity = pos.quantity,
+                pnl = pnl,
+                returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0,
+                entryDate = pos.entryDate,
+                exitDate = bar.date,
+                exitReason = "AI Sell Reversal",
+                mlScoreAtEntry = pos.mlScoreAtEntry
             )
+            closedTradeList.add(0, closed)
+            aiStrategy.mlOptimizer.onTradeClosed(closed, bar, state.activeNewsSentiment, bar.multiIndex)
         }
 
         val totalPortfolioValue = cash + activePosList.sumOf { it.quantity * it.currentPrice }
@@ -222,7 +259,9 @@ class TradingViewModel : ViewModel() {
                 activePositions = activePosList,
                 closedTrades = closedTradeList,
                 todaySignal = signal,
-                equityHistory = updatedEquityHistory
+                equityHistory = updatedEquityHistory,
+                mlModelWeights = aiStrategy.mlOptimizer.weights,
+                mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics()
             )
         }
     }
@@ -248,7 +287,9 @@ class TradingViewModel : ViewModel() {
                 activePositions = emptyList(),
                 closedTrades = emptyList(),
                 todaySignal = null,
-                equityHistory = if (initialBar != null) listOf(Pair(initialBar.date, 100_000.0)) else emptyList()
+                equityHistory = if (initialBar != null) listOf(Pair(initialBar.date, 100_000.0)) else emptyList(),
+                mlModelWeights = aiStrategy.mlOptimizer.weights,
+                mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics()
             )
         }
     }

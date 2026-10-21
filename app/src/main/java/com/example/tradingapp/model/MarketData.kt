@@ -41,6 +41,36 @@ data class MacroNewsSentiment(
     val source: String = "Global Macro & Market Catalyst Scanner"
 )
 
+data class MultiIndexData(
+    val spyClose: Double,
+    val qqqClose: Double, // NASDAQ 100
+    val diaClose: Double, // Dow Jones Industrial
+    val spyBullish: Boolean,
+    val qqqBullish: Boolean,
+    val diaBullish: Boolean,
+    val breadthScore: Double // 0.0 (All Bearish) to 1.0 (All Bullish Alignment)
+)
+
+data class MLModelWeights(
+    var trendWeight: Double = 0.25,
+    var rsiWeight: Double = 0.20,
+    var macdWeight: Double = 0.15,
+    var bollingerWeight: Double = 0.15,
+    var newsWeight: Double = 0.15,
+    var multiIndexWeight: Double = 0.20,
+    var confidenceBias: Double = 0.50,
+    val learningRate: Double = 0.02
+)
+
+data class MLOptimizationMetrics(
+    val totalFeedbackCycles: Int = 0,
+    val modelAccuracyPct: Double = 0.0,
+    val totalWeightUpdates: Int = 0,
+    val avgTradeExpectancy: Double = 0.0,
+    val adaptedBuyThreshold: Double = 0.50,
+    val recentWinRatePct: Double = 0.0
+)
+
 data class MarketBar(
     val date: String,
     val timestamp: Long,
@@ -58,7 +88,16 @@ data class MarketBar(
     val bollingerLower: Double = close * 0.98,
     val macd: Double = 0.0,
     val macdSignal: Double = 0.0,
-    val macdHist: Double = 0.0
+    val macdHist: Double = 0.0,
+    val multiIndex: MultiIndexData = MultiIndexData(
+        spyClose = close,
+        qqqClose = close * 1.15,
+        diaClose = close * 0.92,
+        spyBullish = close > ema50,
+        qqqBullish = close > ema50,
+        diaBullish = close > ema50,
+        breadthScore = if (close > ema50) 1.0 else 0.0
+    )
 )
 
 data class TradeSignal(
@@ -73,7 +112,8 @@ data class TradeSignal(
     val date: String,
     val timestamp: Long = System.currentTimeMillis(),
     val regime: MarketRegime = MarketRegime.BULL_TREND,
-    val macroSentiment: MacroNewsSentiment = MacroNewsSentiment()
+    val macroSentiment: MacroNewsSentiment = MacroNewsSentiment(),
+    val multiIndex: MultiIndexData = MultiIndexData(0.0, 0.0, 0.0, false, false, false, 0.0)
 )
 
 data class TradePosition(
@@ -85,7 +125,8 @@ data class TradePosition(
     var stopLoss: Double,
     val takeProfit: Double,
     val entryDate: String,
-    var currentPrice: Double = entryPrice
+    var currentPrice: Double = entryPrice,
+    val mlScoreAtEntry: Double = 0.50
 ) {
     val currentMarketValue: Double
         get() = quantity * currentPrice
@@ -112,7 +153,8 @@ data class ClosedTrade(
     val returnPct: Double,
     val entryDate: String,
     val exitDate: String,
-    val exitReason: String
+    val exitReason: String,
+    val mlScoreAtEntry: Double = 0.50
 )
 
 data class TrialResult(

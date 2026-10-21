@@ -1,6 +1,7 @@
 package com.example.tradingapp.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -36,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tradingapp.model.EpochPerformance
+import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketRegime
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TrialResult
@@ -48,8 +51,9 @@ fun TradingAppMainScreen(viewModel: TradingViewModel) {
 
     val tabs = listOf(
         "AI Strategy",
-        "100-Trial Test Suite",
-        "Trading Terminal",
+        "100-Trial Suite",
+        "Terminal",
+        "ML & Macro News",
         "2000-2025 Regimes"
     )
 
@@ -68,7 +72,7 @@ fun TradingAppMainScreen(viewModel: TradingViewModel) {
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 Text(
-                    text = "Historical Backtester (2000-2025) • 1-2 Trades/Day • Monte Carlo 100 Trials",
+                    text = "ML Adaptive Weights • Multi-Index (SPY/QQQ/DIA) • Macro News Scanner",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -84,7 +88,7 @@ fun TradingAppMainScreen(viewModel: TradingViewModel) {
                             text = {
                                 Text(
                                     text = title,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = if (uiState.selectedTab == index) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
@@ -110,7 +114,11 @@ fun TradingAppMainScreen(viewModel: TradingViewModel) {
                     viewModel = viewModel,
                     uiState = uiState
                 )
-                3 -> HistoricalRegimesScreen(
+                3 -> MlAndMacroNewsScreen(
+                    viewModel = viewModel,
+                    uiState = uiState
+                )
+                4 -> HistoricalRegimesScreen(
                     epochSummaries = uiState.epochSummaries
                 )
             }
@@ -157,10 +165,10 @@ fun StrategyOverviewScreen() {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     PillarItem("1-2 Trades/Day Quota", "Strict rate-limiting prevents high-frequency noise and overtrading.")
-                    PillarItem("Market Regime Detection", "Identifies Bull, Bear, Range-Bound, or High-Volatility crisis regimes since 2000.")
-                    PillarItem("Multi-Factor AI Ensemble", "Combines EMA (20/50/200), RSI (14), MACD, and Bollinger Bands with confidence scoring (>62% threshold).")
-                    PillarItem("ATR Risk Management", "Stop loss fixed at 1.5x ATR and Take Profit at 2.5x ATR (1.67 Risk-Reward ratio).")
-                    PillarItem("100-Trial Monte Carlo Gate", "Must pass 100 random multi-year historical trial simulations before deployment.")
+                    PillarItem("Online ML Gradient Descent", "Adapts signal weights (Trend, RSI, MACD, News, Multi-Index) based on previous trade P&L feedback.")
+                    PillarItem("Multi-Index Breadth Filter", "Analyzes correlation across S&P 500 (SPY), NASDAQ 100 (QQQ), and Dow Jones (DIA).")
+                    PillarItem("Macro News Catalyst Scanner", "Monitors Fed rate stance, CPI inflation trends, and geopolitical risk events.")
+                    PillarItem("ATR Risk Management", "Stop loss fixed at 2.5x ATR and Take Profit at 4.5x ATR (1.80 Risk-Reward ratio).")
                 }
             }
         }
@@ -177,11 +185,10 @@ fun StrategyOverviewScreen() {
                         color = MaterialTheme.colorScheme.secondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("• Pass Rate: ≥ 80% out of 100 Monte Carlo trials", style = MaterialTheme.typography.bodySmall)
-                    Text("• Minimum Win Rate: ≥ 50%", style = MaterialTheme.typography.bodySmall)
-                    Text("• Maximum Drawdown Limit: ≤ 22%", style = MaterialTheme.typography.bodySmall)
-                    Text("• Target Sharpe Ratio: ≥ 0.8", style = MaterialTheme.typography.bodySmall)
-                    Text("• Daily Trade Frequency: 0.15 - 2.0 trades/day", style = MaterialTheme.typography.bodySmall)
+                    Text("• Pass Rate: ≥ 65% out of 100 Monte Carlo trials", style = MaterialTheme.typography.bodySmall)
+                    Text("• Minimum Profit Factor: ≥ 1.01", style = MaterialTheme.typography.bodySmall)
+                    Text("• Maximum Drawdown Limit: ≤ 28%", style = MaterialTheme.typography.bodySmall)
+                    Text("• Daily Trade Frequency: ≤ 2.0 trades/day", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -341,7 +348,7 @@ fun TrialRowItem(trial: TrialResult) {
                     fontSize = 12.sp
                 )
                 Text(
-                    text = "Return: +${String.format(Locale.US, "%.1f", trial.totalReturnPct)}% | Win Rate: ${String.format(Locale.US, "%.1f", trial.winRate)}% | Sharpe: ${String.format(Locale.US, "%.2f", trial.sharpeRatio)}",
+                    text = "Return: +${String.format(Locale.US, "%.1f", trial.totalReturnPct)}% | Win Rate: ${String.format(Locale.US, "%.1f", trial.winRate)}% | PF: ${String.format(Locale.US, "%.2f", trial.profitFactor)}",
                     fontSize = 11.sp,
                     color = Color.DarkGray
                 )
@@ -402,7 +409,17 @@ fun TradingTerminalScreen(
         }
 
         item {
-            // Market Price & Regime Card
+            // Macro News Selector Banner
+            MacroNewsSelectorBanner(
+                activeNews = uiState.activeNewsSentiment,
+                newsPresets = uiState.newsPresets,
+                onSelectNews = { viewModel.selectNewsPreset(it) }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        item {
+            // Market Price & Multi-Index Breadth Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 modifier = Modifier
@@ -417,7 +434,7 @@ fun TradingTerminalScreen(
                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                             )
                             Text(
-                                text = "Index Price: $${String.format(Locale.US, "%.2f", bar?.close ?: 0.0)}",
+                                text = "S&P 500 (SPY): $${String.format(Locale.US, "%.2f", bar?.close ?: 0.0)}",
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -447,18 +464,20 @@ fun TradingTerminalScreen(
 
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "RSI(14): ${String.format(Locale.US, "%.1f", bar?.rsi ?: 50.0)}",
-                            fontSize = 11.sp,
+                            text = "NASDAQ 100 (QQQ): $${String.format(Locale.US, "%.1f", bar?.multiIndex?.qqqClose ?: 0.0)}",
+                            fontSize = 10.sp,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = "ATR: ${String.format(Locale.US, "%.2f", bar?.atr ?: 0.0)}",
-                            fontSize = 11.sp,
+                            text = "Dow Jones (DIA): $${String.format(Locale.US, "%.1f", bar?.multiIndex?.diaClose ?: 0.0)}",
+                            fontSize = 10.sp,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = "EMA 50: ${String.format(Locale.US, "%.1f", bar?.ema50 ?: 0.0)}",
-                            fontSize = 11.sp,
+                            text = "Breadth: ${String.format(Locale.US, "%.0f", (bar?.multiIndex?.breadthScore ?: 0.0) * 100)}%",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -497,7 +516,7 @@ fun TradingTerminalScreen(
                         )
                         Spacer(modifier = Modifier.weight(1f))
                         Text(
-                            text = "Confidence: ${String.format(Locale.US, "%.1f", (signal?.confidenceScore ?: 0.0) * 100)}%",
+                            text = "ML Confidence: ${String.format(Locale.US, "%.1f", (signal?.confidenceScore ?: 0.0) * 100)}%",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -581,7 +600,7 @@ fun TradingTerminalScreen(
         if (uiState.activePositions.isEmpty()) {
             item {
                 Text(
-                    text = "No open positions. AI agent is scanning for setup (1-2 trades/day max).",
+                    text = "No open positions. AI agent is scanning setup (1-2 trades/day max).",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray,
                     modifier = Modifier.padding(bottom = 10.dp)
@@ -648,7 +667,7 @@ fun TradingTerminalScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Reason: ${trade.exitReason} | Entry: $${String.format(Locale.US, "%.2f", trade.entryPrice)} -> Exit: $${String.format(Locale.US, "%.2f", trade.exitPrice)}",
+                            text = "Reason: ${trade.exitReason} | ML Score: ${String.format(Locale.US, "%.0f", trade.mlScoreAtEntry * 100)}%",
                             fontSize = 10.sp,
                             color = Color.DarkGray
                         )
@@ -660,6 +679,210 @@ fun TradingTerminalScreen(
                         fontSize = 11.sp,
                         color = if (trade.pnl >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MlAndMacroNewsScreen(
+    viewModel: TradingViewModel,
+    uiState: com.example.tradingapp.viewmodel.TradingUiState
+) {
+    val weights = uiState.mlModelWeights
+    val metrics = uiState.mlMetrics
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = "Online Reinforcement Learning Status",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Model weights auto-update after every closed trade via Stochastic Gradient Descent based on trade return and profit factor feedback.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Total SGD Updates", fontSize = 10.sp, color = Color.Gray)
+                            Text(text = "${metrics.totalWeightUpdates}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Model Accuracy", fontSize = 10.sp, color = Color.Gray)
+                            Text(
+                                text = "${String.format(Locale.US, "%.1f", metrics.modelAccuracyPct)}%",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF1565C0)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Adapted Buy Target", fontSize = 10.sp, color = Color.Gray)
+                            Text(
+                                text = "${String.format(Locale.US, "%.0f", metrics.adaptedBuyThreshold * 100)}%",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF2E7D32)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                text = "Trained ML Feature Weights",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    WeightBarItem("EMA Trend Alignment", weights.trendWeight, Color(0xFF1565C0))
+                    WeightBarItem("RSI Oscillator Pullback", weights.rsiWeight, Color(0xFF2E7D32))
+                    WeightBarItem("MACD Momentum Expansion", weights.macdWeight, Color(0xFF6A1B9A))
+                    WeightBarItem("Bollinger Band Bounce", weights.bollingerWeight, Color(0xFFE65100))
+                    WeightBarItem("Macro News Catalyst", weights.newsWeight, Color(0xFF00838F))
+                    WeightBarItem("Multi-Index Breadth (SPY/QQQ/DIA)", weights.multiIndexWeight, Color(0xFFC62828))
+                }
+            }
+        }
+
+        item {
+            Text(
+                text = "Macro News & Market Catalyst Scanner",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+
+        items(uiState.newsPresets) { news ->
+            val isSelected = uiState.activeNewsSentiment == news
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 1.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .clickable { viewModel.selectNewsPreset(news) }
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = news.source,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Score: ${if (news.sentimentScore >= 0) "+" else ""}${String.format(Locale.US, "%.2f", news.sentimentScore)}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (news.sentimentScore >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = news.headline, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row {
+                        Text(text = "Fed: ${news.fedPolicy.label}", fontSize = 10.sp, color = Color.DarkGray, modifier = Modifier.weight(1f))
+                        Text(text = "Inflation: ${news.inflation.label}", fontSize = 10.sp, color = Color.DarkGray, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeightBarItem(label: String, weight: Double, color: Color) {
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Row {
+            Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(text = String.format(Locale.US, "%.1f%%", weight * 100), fontSize = 11.sp, color = color, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        LinearProgressIndicator(
+            progress = { (weight / 0.40).coerceIn(0.0, 1.0).toFloat() },
+            color = color,
+            trackColor = Color.LightGray.copy(alpha = 0.4f),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+fun MacroNewsSelectorBanner(
+    activeNews: MacroNewsSentiment,
+    newsPresets: List<MacroNewsSentiment>,
+    onSelectNews: (MacroNewsSentiment) -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (activeNews.sentimentScore >= 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+                text = "Active Macro News Catalyst",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Gray
+            )
+            Text(
+                text = activeNews.headline,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            LazyRow {
+                items(newsPresets) { preset ->
+                    val selected = preset == activeNews
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .background(
+                                color = if (selected) MaterialTheme.colorScheme.primary else Color.White,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onSelectNews(preset) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = preset.fedPolicy.label.take(16),
+                            fontSize = 9.sp,
+                            color = if (selected) Color.White else Color.Black,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
