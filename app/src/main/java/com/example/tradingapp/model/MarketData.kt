@@ -13,6 +13,12 @@ enum class TradeAction {
     HOLD
 }
 
+enum class OrderType(val label: String, val description: String) {
+    HYBRID_SMART_ROUTING("Hybrid Smart Routing (Recommended)", "Limit Order for Take Profit (Zero Slippage) + Market Order for Stop Loss"),
+    LIMIT_ORDER_STRICT("Limit Orders Only", "Zero spread slippage on all exits; execution fill dependent on order book"),
+    MARKET_ORDER_FAST("Market Orders Only", "100% fill guarantee; subject to bid-ask spread slippage")
+}
+
 enum class FedPolicyStance(val label: String) {
     DOVISH_CUTTING("Dovish (Rate Cuts)"),
     NEUTRAL("Neutral / Data Dependent"),
@@ -34,7 +40,7 @@ enum class MacroRiskEvent(val label: String) {
 
 data class MacroNewsSentiment(
     val headline: String = "Fed pauses rate trajectory as cooling CPI inflation aligns with steady labor market.",
-    val sentimentScore: Double = 0.20, // -1.0 (Crisis) to +1.0 (Bullish Expansion)
+    val sentimentScore: Double = 0.20,
     val fedPolicy: FedPolicyStance = FedPolicyStance.NEUTRAL,
     val inflation: InflationTrend = InflationTrend.COOLING,
     val riskEvent: MacroRiskEvent = MacroRiskEvent.NORMAL,
@@ -43,12 +49,12 @@ data class MacroNewsSentiment(
 
 data class MultiIndexData(
     val spyClose: Double,
-    val qqqClose: Double, // NASDAQ 100
-    val diaClose: Double, // Dow Jones Industrial
+    val qqqClose: Double,
+    val diaClose: Double,
     val spyBullish: Boolean,
     val qqqBullish: Boolean,
     val diaBullish: Boolean,
-    val breadthScore: Double // 0.0 (All Bearish) to 1.0 (All Bullish Alignment)
+    val breadthScore: Double
 )
 
 data class MLModelWeights(
@@ -113,7 +119,8 @@ data class TradeSignal(
     val timestamp: Long = System.currentTimeMillis(),
     val regime: MarketRegime = MarketRegime.BULL_TREND,
     val macroSentiment: MacroNewsSentiment = MacroNewsSentiment(),
-    val multiIndex: MultiIndexData = MultiIndexData(0.0, 0.0, 0.0, false, false, false, 0.0)
+    val multiIndex: MultiIndexData = MultiIndexData(0.0, 0.0, 0.0, false, false, false, 0.0),
+    val orderType: OrderType = OrderType.HYBRID_SMART_ROUTING
 )
 
 data class TradePosition(
@@ -126,7 +133,8 @@ data class TradePosition(
     val takeProfit: Double,
     val entryDate: String,
     var currentPrice: Double = entryPrice,
-    val mlScoreAtEntry: Double = 0.50
+    val mlScoreAtEntry: Double = 0.50,
+    val orderType: OrderType = OrderType.HYBRID_SMART_ROUTING
 ) {
     val currentMarketValue: Double
         get() = quantity * currentPrice
@@ -154,7 +162,9 @@ data class ClosedTrade(
     val entryDate: String,
     val exitDate: String,
     val exitReason: String,
-    val mlScoreAtEntry: Double = 0.50
+    val mlScoreAtEntry: Double = 0.50,
+    val orderType: OrderType = OrderType.HYBRID_SMART_ROUTING,
+    val slippageSavedDollars: Double = 0.0
 )
 
 data class TrialResult(
@@ -171,7 +181,8 @@ data class TrialResult(
     val sharpeRatio: Double,
     val profitFactor: Double,
     val passed: Boolean,
-    val failureReason: String = ""
+    val failureReason: String = "",
+    val totalSlippageSavedDollars: Double = 0.0
 )
 
 data class BacktestSummary(
@@ -186,7 +197,8 @@ data class BacktestSummary(
     val bestTrialReturnPct: Double = 0.0,
     val worstTrialReturnPct: Double = 0.0,
     val overallPassed: Boolean = false,
-    val trials: List<TrialResult> = emptyList()
+    val trials: List<TrialResult> = emptyList(),
+    val totalSlippageSavedDollars: Double = 0.0
 )
 
 data class EpochPerformance(

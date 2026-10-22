@@ -5,18 +5,18 @@ import com.example.tradingapp.model.BacktestSummary
 import com.example.tradingapp.model.ClosedTrade
 import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketBar
+import com.example.tradingapp.model.OrderType
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TradePosition
 import com.example.tradingapp.model.TrialResult
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.sqrt
 
 object BacktestEngine {
 
-    private const val SLIPPAGE_PCT = 0.0002 // 0.02% slippage per trade execution
-    private const val COMMISSION_PER_TRADE = 0.50 // $0.50 flat fee per trade
+    private const val SLIPPAGE_PCT = 0.0002 // 0.02% market slippage
+    private const val COMMISSION_PER_TRADE = 0.50 // $0.50 flat fee
 
     fun runSingleBacktest(
         bars: List<MarketBar>,
@@ -50,6 +50,7 @@ object BacktestEngine {
         var currentPosition: TradePosition? = null
         val closedTrades = mutableListOf<ClosedTrade>()
         val equityCurve = mutableListOf<Double>()
+        var cumulativeSlippageSaved = 0.0
 
         var peakEquity = initialCapital
         var maxDrawdownAmount = 0.0
@@ -65,7 +66,6 @@ object BacktestEngine {
                 val pos = currentPosition
                 pos.currentPrice = bar.close
 
-                // Profit-gated Trailing Stop: Only trail once position achieves +1.5x ATR gain
                 if (bar.close > pos.entryPrice + (bar.atr * 1.5)) {
                     val calculatedTrailingStop = bar.close - (bar.atr * 2.5)
                     if (calculatedTrailingStop > pos.stopLoss) {
@@ -76,15 +76,23 @@ object BacktestEngine {
                 var exitTrade = false
                 var exitPrice = bar.close
                 var exitReason = ""
+                var slippageSavedThisTrade = 0.0
 
                 if (bar.low <= pos.stopLoss) {
                     exitTrade = true
-                    exitPrice = pos.stopLoss * (1.0 - SLIPPAGE_PCT)
+                    val activeSlippage = if (pos.orderType == OrderType.LIMIT_ORDER_STRICT) 0.0 else SLIPPAGE_PCT
+                    exitPrice = pos.stopLoss * (1.0 - activeSlippage)
                     exitReason = if (pos.stopLoss > pos.entryPrice) "Trailing Stop Loss (Profit Locked)" else "Stop Loss Hit"
                 } else if (bar.high >= pos.takeProfit) {
                     exitTrade = true
-                    exitPrice = pos.takeProfit * (1.0 - SLIPPAGE_PCT)
-                    exitReason = "Take Profit Target Hit"
+                    // Limit Order Take Profit execution achieves ZERO negative slippage!
+                    val activeSlippage = if (pos.orderType == OrderType.HYBRID_SMART_ROUTING || pos.orderType == OrderType.LIMIT_ORDER_STRICT) 0.0 else SLIPPAGE_PCT
+                    exitPrice = pos.takeProfit * (1.0 - activeSlippage)
+                    exitReason = "Take Profit Limit Hit (Zero Slippage)"
+                    if (activeSlippage == 0.0) {
+                        slippageSavedThisTrade = pos.quantity * pos.takeProfit * SLIPPAGE_PCT
+                        cumulativeSlippageSaved += slippageSavedThisTrade
+                    }
                 }
 
                 if (exitTrade) {
@@ -106,7 +114,9 @@ object BacktestEngine {
                         entryDate = pos.entryDate,
                         exitDate = bar.date,
                         exitReason = exitReason,
-                        mlScoreAtEntry = pos.mlScoreAtEntry
+                        mlScoreAtEntry = pos.mlScoreAtEntry,
+                        orderType = pos.orderType,
+                        slippageSavedDollars = slippageSavedThisTrade
                     )
                     closedTrades.add(closed)
                     strategy.mlOptimizer.onTradeClosed(closed, bar, newsSentiment, bar.multiIndex)
@@ -126,7 +136,8 @@ object BacktestEngine {
 
             // 3. Process BUY / SELL Signal Executions
             if (signal.action == TradeAction.BUY && currentPosition == null && signal.positionSize > 0) {
-                val entryPriceWithSlippage = bar.close * (1.0 + SLIPPAGE_PCT)
+                val entrySlippage = if (signal.orderType == OrderType.LIMIT_ORDER_STRICT) 0.0 else SLIPPAGE_PCT
+                val entryPriceWithSlippage = bar.close * (1.0 + entrySlippage)
                 val totalCost = (signal.positionSize * entryPriceWithSlippage) + COMMISSION_PER_TRADE
 
                 if (cash >= totalCost) {
@@ -141,12 +152,14 @@ object BacktestEngine {
                         takeProfit = signal.takeProfit,
                         entryDate = bar.date,
                         currentPrice = bar.close,
-                        mlScoreAtEntry = signal.confidenceScore
+                        mlScoreAtEntry = signal.confidenceScore,
+                        orderType = signal.orderType
                     )
                 }
             } else if (signal.action == TradeAction.SELL && currentPosition != null) {
                 val pos = currentPosition
-                val exitPriceWithSlippage = bar.close * (1.0 - SLIPPAGE_PCT)
+                val exitSlippage = if (pos.orderType == OrderType.LIMIT_ORDER_STRICT) 0.0 else SLIPPAGE_PCT
+                val exitPriceWithSlippage = bar.close * (1.0 - exitSlippage)
                 val grossProceeds = pos.quantity * exitPriceWithSlippage
                 val pnl = grossProceeds - (pos.quantity * pos.entryPrice) - COMMISSION_PER_TRADE
                 val returnPct = (pnl / (pos.quantity * pos.entryPrice)) * 100.0
@@ -165,7 +178,9 @@ object BacktestEngine {
                     entryDate = pos.entryDate,
                     exitDate = bar.date,
                     exitReason = "AI Reversal Signal",
-                    mlScoreAtEntry = pos.mlScoreAtEntry
+                    mlScoreAtEntry = pos.mlScoreAtEntry,
+                    orderType = pos.orderType,
+                    slippageSavedDollars = 0.0
                 )
                 closedTrades.add(closed)
                 strategy.mlOptimizer.onTradeClosed(closed, bar, newsSentiment, bar.multiIndex)
@@ -209,7 +224,8 @@ object BacktestEngine {
                 entryDate = pos.entryDate,
                 exitDate = lastBar.date,
                 exitReason = "Backtest Window Close",
-                mlScoreAtEntry = pos.mlScoreAtEntry
+                mlScoreAtEntry = pos.mlScoreAtEntry,
+                orderType = pos.orderType
             )
             closedTrades.add(closed)
             strategy.mlOptimizer.onTradeClosed(closed, lastBar, newsSentiment, lastBar.multiIndex)
@@ -234,7 +250,6 @@ object BacktestEngine {
         val stdDevDailyReturn = sqrt(variance)
         val sharpeRatio = if (stdDevDailyReturn > 0) (meanDailyReturn / stdDevDailyReturn) * sqrt(252.0) else 0.0
 
-        // Deployment Safety Pass Gate Rules
         val passed = totalReturnPct > 0.0 &&
                 profitFactor >= 1.01 &&
                 maxDrawdownPct <= 28.0 &&
@@ -262,7 +277,8 @@ object BacktestEngine {
             sharpeRatio = sharpeRatio,
             profitFactor = profitFactor,
             passed = passed,
-            failureReason = failureReason
+            failureReason = failureReason,
+            totalSlippageSavedDollars = cumulativeSlippageSaved
         )
     }
 
@@ -282,7 +298,8 @@ object BacktestEngine {
 
             val strategy = AITradingStrategy(
                 maxDailyTrades = 2,
-                buyConfidenceThreshold = 0.50
+                buyConfidenceThreshold = 0.50,
+                preferredOrderType = OrderType.HYBRID_SMART_ROUTING
             )
 
             val trialResult = runSingleBacktest(
@@ -306,6 +323,7 @@ object BacktestEngine {
         val avgMaxDrawdown = trialsList.map { it.maxDrawdownPct }.average()
         val avgSharpe = trialsList.map { it.sharpeRatio }.average()
         val avgTradesPerDay = trialsList.map { it.avgTradesPerDay }.average()
+        val totalSlippageSaved = trialsList.sumOf { it.totalSlippageSavedDollars }
 
         val bestTrial = trialsList.maxOfOrNull { it.totalReturnPct } ?: 0.0
         val worstTrial = trialsList.minOfOrNull { it.totalReturnPct } ?: 0.0
@@ -324,7 +342,8 @@ object BacktestEngine {
             bestTrialReturnPct = bestTrial,
             worstTrialReturnPct = worstTrial,
             overallPassed = overallPassed,
-            trials = trialsList
+            trials = trialsList,
+            totalSlippageSavedDollars = totalSlippageSaved
         )
     }
 }

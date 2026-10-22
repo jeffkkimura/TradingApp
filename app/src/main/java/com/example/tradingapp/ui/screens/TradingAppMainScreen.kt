@@ -419,13 +419,9 @@ fun TradingTerminalScreen(
         }
 
         item {
-            // Macro News Selector Banner
-            MacroNewsSelectorBanner(
-                activeNews = uiState.activeNewsSentiment,
-                newsPresets = uiState.newsPresets,
-                onSelectNews = { viewModel.selectNewsPreset(it) }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
+            // Interactive Candlestick Chart
+            val historyBars = viewModel.getRecentBarsForChart()
+            com.example.tradingapp.ui.components.StockCandleChart(bars = historyBars)
         }
 
         item {

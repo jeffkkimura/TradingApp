@@ -83,6 +83,13 @@ class TradingViewModel : ViewModel() {
         _uiState.update { it.copy(selectedTab = tabIndex) }
     }
 
+    fun getRecentBarsForChart(): List<MarketBar> {
+        val idx = _uiState.value.currentBarIndex
+        if (allBars.isEmpty() || idx < 0) return emptyList()
+        val start = maxOf(0, idx - 40)
+        return allBars.subList(start, minOf(allBars.size, idx + 1))
+    }
+
     fun selectNewsPreset(news: MacroNewsSentiment) {
         _uiState.update { it.copy(activeNewsSentiment = news) }
         evaluateTodaySignal()

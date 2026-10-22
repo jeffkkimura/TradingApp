@@ -3,7 +3,7 @@ package com.example.tradingapp.engine
 import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketBar
 import com.example.tradingapp.model.MarketRegime
-import com.example.tradingapp.model.MultiIndexData
+import com.example.tradingapp.model.OrderType
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TradeSignal
 import java.util.Locale
@@ -15,6 +15,7 @@ class AITradingStrategy(
     val riskPerTradePct: Double = 0.015,
     val atrStopLossMultiplier: Double = 2.5,
     val atrTakeProfitMultiplier: Double = 4.5,
+    val preferredOrderType: OrderType = OrderType.HYBRID_SMART_ROUTING,
     val mlOptimizer: MLTradeOptimizer = MLTradeOptimizer()
 ) {
 
@@ -59,19 +60,17 @@ class AITradingStrategy(
                 timestamp = currentBar.timestamp,
                 regime = regime,
                 macroSentiment = newsSentiment,
-                multiIndex = multiIndex
+                multiIndex = multiIndex,
+                orderType = preferredOrderType
             )
         }
 
-        // Compute Machine Learning Confidence Score
         val aiScore = mlOptimizer.predictConfidenceScore(currentBar, newsSentiment, multiIndex)
         val adaptedThreshold = mlOptimizer.getOptimizationMetrics().adaptedBuyThreshold
 
-        // 200-EMA Hysteresis Band
         val isConfirmedAbove200Ema = currentBar.close >= (currentBar.ema200 * 1.005)
         val isConfirmedBelow200Ema = currentBar.close <= (currentBar.ema200 * 0.995)
 
-        // Exit condition for open position
         val isExitCondition = hasOpenPosition && (
                 isConfirmedBelow200Ema ||
                 (currentBar.close < currentBar.ema50 && currentBar.rsi < 38.0) ||
@@ -97,12 +96,13 @@ class AITradingStrategy(
                     takeProfit = takeProfit,
                     positionSize = shares,
                     confidenceScore = aiScore,
-                    reasoning = "ML Model Score: ${String.format(Locale.US, "%.1f", aiScore * 100)}% (Req: ${String.format(Locale.US, "%.0f", adaptedThreshold * 100)}%). Multi-Index Breadth: ${String.format(Locale.US, "%.0f", multiIndex.breadthScore * 100)}%. News: ${newsSentiment.fedPolicy.label}.",
+                    reasoning = "ML Score: ${String.format(Locale.US, "%.1f", aiScore * 100)}% (${preferredOrderType.label.take(22)}). Breadth: ${String.format(Locale.US, "%.0f", multiIndex.breadthScore * 100)}%. News: ${newsSentiment.fedPolicy.label}.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
                     macroSentiment = newsSentiment,
-                    multiIndex = multiIndex
+                    multiIndex = multiIndex,
+                    orderType = preferredOrderType
                 )
             }
 
@@ -117,12 +117,13 @@ class AITradingStrategy(
                     takeProfit = 0.0,
                     positionSize = 0.0,
                     confidenceScore = 1.0 - aiScore,
-                    reasoning = "AI Exit Trigger: ${if (newsSentiment.sentimentScore < -0.40) "Macro News Risk Shock (${newsSentiment.headline.take(35)}...)" else if (isConfirmedBelow200Ema) "Confirmed Below 200-EMA" else "Trend Breakdown (< 50 EMA)"}.",
+                    reasoning = "AI Exit Trigger: ${if (newsSentiment.sentimentScore < -0.40) "Macro News Risk Shock (${newsSentiment.headline.take(25)}...)" else if (isConfirmedBelow200Ema) "Confirmed Below 200-EMA" else "Trend Breakdown (< 50 EMA)"}.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
                     macroSentiment = newsSentiment,
-                    multiIndex = multiIndex
+                    multiIndex = multiIndex,
+                    orderType = preferredOrderType
                 )
             }
 
@@ -135,12 +136,13 @@ class AITradingStrategy(
                     takeProfit = 0.0,
                     positionSize = 0.0,
                     confidenceScore = aiScore,
-                    reasoning = if (newsSentiment.sentimentScore < -0.25) "Macro News Risk Filter Active (${newsSentiment.headline.take(30)}...)" else if (currentBar.close < currentBar.ema200) "Secular Bear Regime (Below 200-EMA) - Cash Preserved." else "Scanning ML setup.",
+                    reasoning = if (newsSentiment.sentimentScore < -0.25) "Macro News Risk Filter Active (${newsSentiment.headline.take(25)}...)" else if (currentBar.close < currentBar.ema200) "Secular Bear Regime (Below 200-EMA) - Cash Preserved." else "Scanning ML setup.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
                     macroSentiment = newsSentiment,
-                    multiIndex = multiIndex
+                    multiIndex = multiIndex,
+                    orderType = preferredOrderType
                 )
             }
         }
