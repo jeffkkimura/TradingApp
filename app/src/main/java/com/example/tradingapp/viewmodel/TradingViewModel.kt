@@ -13,6 +13,7 @@ import com.example.tradingapp.model.MLModelWeights
 import com.example.tradingapp.model.MLOptimizationMetrics
 import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketBar
+import com.example.tradingapp.model.OrderType
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TradePosition
 import com.example.tradingapp.model.TradeSignal
@@ -48,7 +49,10 @@ data class TradingUiState(
     val mlMetrics: MLOptimizationMetrics = MLOptimizationMetrics(),
 
     // Strategy & Historical Regimes
-    val epochSummaries: List<EpochPerformance> = emptyList()
+    val epochSummaries: List<EpochPerformance> = emptyList(),
+
+    // Manual Trade Dialog
+    val showOrderDialog: Boolean = false
 )
 
 class TradingViewModel : ViewModel() {
@@ -83,6 +87,10 @@ class TradingViewModel : ViewModel() {
         _uiState.update { it.copy(selectedTab = tabIndex) }
     }
 
+    fun toggleOrderDialog(show: Boolean) {
+        _uiState.update { it.copy(showOrderDialog = show) }
+    }
+
     fun getRecentBarsForChart(): List<MarketBar> {
         val idx = _uiState.value.currentBarIndex
         if (allBars.isEmpty() || idx < 0) return emptyList()
@@ -108,6 +116,49 @@ class TradingViewModel : ViewModel() {
         _uiState.update { it.copy(todaySignal = signal) }
     }
 
+    /**
+     * Places a manual trade order immediately.
+     */
+    fun placeManualTrade(shares: Double, orderType: OrderType) {
+        val state = _uiState.value
+        val bar = state.currentBar ?: return
+        var cash = state.portfolioCash
+        val activePosList = state.activePositions.toMutableList()
+
+        val priceWithSlippage = if (orderType == OrderType.LIMIT_ORDER_STRICT) bar.close else bar.close * 1.0002
+        val totalCost = (shares * priceWithSlippage) + 0.50
+
+        if (cash >= totalCost && activePosList.isEmpty()) {
+            cash -= totalCost
+            val stopLoss = bar.close - (bar.atr * 2.5)
+            val takeProfit = bar.close + (bar.atr * 4.5)
+
+            activePosList.add(
+                TradePosition(
+                    id = "MANUAL_${bar.timestamp}",
+                    symbol = "SPY_AI",
+                    type = TradeAction.BUY,
+                    entryPrice = priceWithSlippage,
+                    quantity = shares,
+                    stopLoss = stopLoss,
+                    takeProfit = takeProfit,
+                    entryDate = bar.date,
+                    currentPrice = bar.close,
+                    mlScoreAtEntry = 0.85,
+                    orderType = orderType
+                )
+            )
+
+            _uiState.update {
+                it.copy(
+                    portfolioCash = cash,
+                    activePositions = activePosList,
+                    showOrderDialog = false
+                )
+            }
+        }
+    }
+
     fun run100TrialTest() {
         if (_uiState.value.isTestRunning) return
 
@@ -120,7 +171,6 @@ class TradingViewModel : ViewModel() {
         }
 
         viewModelScope.launch(Dispatchers.Default) {
-            val news = _uiState.value.activeNewsSentiment
             val summary = BacktestEngine.run100TrialMonteCarloBacktest { completed, total, currentTrial ->
                 val progressPct = ((completed.toDouble() / total) * 100).toInt()
                 _uiState.update { state ->
@@ -169,11 +219,11 @@ class TradingViewModel : ViewModel() {
             if (bar.low <= pos.stopLoss) {
                 exit = true
                 exitPrice = pos.stopLoss * 0.9998
-                reason = "Stop Loss Triggered"
+                reason = if (pos.stopLoss > pos.entryPrice) "Trailing Stop Loss (Profit Locked)" else "Stop Loss Hit"
             } else if (bar.high >= pos.takeProfit) {
                 exit = true
-                exitPrice = pos.takeProfit * 0.9998
-                reason = "Take Profit Target Hit"
+                exitPrice = pos.takeProfit
+                reason = "Take Profit Limit Hit (Zero Slippage)"
             }
 
             if (exit) {
@@ -193,7 +243,8 @@ class TradingViewModel : ViewModel() {
                     entryDate = pos.entryDate,
                     exitDate = bar.date,
                     exitReason = reason,
-                    mlScoreAtEntry = pos.mlScoreAtEntry
+                    mlScoreAtEntry = pos.mlScoreAtEntry,
+                    orderType = pos.orderType
                 )
 
                 closedTradeList.add(0, closed)
@@ -228,7 +279,8 @@ class TradingViewModel : ViewModel() {
                         takeProfit = signal.takeProfit,
                         entryDate = bar.date,
                         currentPrice = bar.close,
-                        mlScoreAtEntry = signal.confidenceScore
+                        mlScoreAtEntry = signal.confidenceScore,
+                        orderType = signal.orderType
                     )
                 )
             }
@@ -250,10 +302,12 @@ class TradingViewModel : ViewModel() {
                 entryDate = pos.entryDate,
                 exitDate = bar.date,
                 exitReason = "AI Sell Reversal",
-                mlScoreAtEntry = pos.mlScoreAtEntry
+                mlScoreAtEntry = pos.mlScoreAtEntry,
+                orderType = pos.orderType
             )
             closedTradeList.add(0, closed)
             aiStrategy.mlOptimizer.onTradeClosed(closed, bar, state.activeNewsSentiment, bar.multiIndex)
+            aiStrategy.notifyTradeOutcome(closed.pnl > 0)
         }
 
         val totalPortfolioValue = cash + activePosList.sumOf { it.quantity * it.currentPrice }
@@ -297,7 +351,8 @@ class TradingViewModel : ViewModel() {
                 todaySignal = null,
                 equityHistory = if (initialBar != null) listOf(Pair(initialBar.date, 100_000.0)) else emptyList(),
                 mlModelWeights = aiStrategy.mlOptimizer.weights,
-                mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics()
+                mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics(),
+                showOrderDialog = false
             )
         }
     }

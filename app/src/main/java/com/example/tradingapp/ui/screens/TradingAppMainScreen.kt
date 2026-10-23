@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -27,9 +28,14 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import com.example.tradingapp.model.EpochPerformance
 import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketRegime
+import com.example.tradingapp.model.OrderType
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TrialResult
 import com.example.tradingapp.viewmodel.TradingViewModel
@@ -50,7 +57,7 @@ data class AppBenchmarkItem(
     val method: String,
     val impact: String,
     val effectiveness: String,
-    val score: Int // 1-100 effectiveness score
+    val score: Int
 )
 
 @Composable
@@ -387,6 +394,16 @@ fun TradingTerminalScreen(
     val bar = uiState.currentBar
     val signal = uiState.todaySignal
 
+    if (uiState.showOrderDialog) {
+        ManualOrderPlacementDialog(
+            currentPrice = bar?.close ?: 100.0,
+            onDismiss = { viewModel.toggleOrderDialog(false) },
+            onSubmitOrder = { shares, orderType ->
+                viewModel.placeManualTrade(shares, orderType)
+            }
+        )
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             // Controls row
@@ -401,14 +418,22 @@ fun TradingTerminalScreen(
                 ) {
                     Text("+1 Day")
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Button(
                     onClick = { viewModel.runAutoTrader(30) },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Auto 30 Days")
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = { viewModel.toggleOrderDialog(true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Place Trade")
+                }
+                Spacer(modifier = Modifier.width(6.dp))
                 OutlinedButton(
                     onClick = { viewModel.resetSimulation() },
                     modifier = Modifier.weight(1f)
@@ -557,7 +582,7 @@ fun TradingTerminalScreen(
         }
 
         item {
-            // Capital Survival & Kelly Sizing Card
+            // Capital Survival & Account Balance Card
             val totalEquity = uiState.portfolioCash + uiState.activePositions.sumOf { it.quantity * it.currentPrice }
             val pnlPct = ((totalEquity - 100_000.0) / 100_000.0) * 100.0
 
@@ -726,6 +751,120 @@ fun TradingTerminalScreen(
             }
         }
     }
+}
+
+@Composable
+fun ManualOrderPlacementDialog(
+    currentPrice: Double,
+    onDismiss: () -> Unit,
+    onSubmitOrder: (shares: Double, orderType: OrderType) -> Unit
+) {
+    var sharesCount by remember { mutableDoubleStateOf(100.0) }
+    var selectedOrderType by remember { mutableStateOf(OrderType.HYBRID_SMART_ROUTING) }
+
+    val estimatedCost = sharesCount * currentPrice * 1.0002 + 0.50
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Place Trade Order",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Symbol: SPY_AI Index @ $${String.format(Locale.US, "%.2f", currentPrice)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(text = "Order Sizing (Shares):", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                Row(modifier = Modifier.padding(vertical = 6.dp)) {
+                    Button(
+                        onClick = { sharesCount = 50.0 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (sharesCount == 50.0) MaterialTheme.colorScheme.primary else Color.LightGray
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("50", fontSize = 10.sp)
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Button(
+                        onClick = { sharesCount = 100.0 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (sharesCount == 100.0) MaterialTheme.colorScheme.primary else Color.LightGray
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("100", fontSize = 10.sp)
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Button(
+                        onClick = { sharesCount = 200.0 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (sharesCount == 200.0) MaterialTheme.colorScheme.primary else Color.LightGray
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("200", fontSize = 10.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "Smart Order Execution Type:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                OrderType.entries.forEach { type ->
+                    val isSelected = selectedOrderType == type
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedOrderType = type }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (isSelected) "● " else "○ ",
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                        )
+                        Text(
+                            text = type.label,
+                            fontSize = 10.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Est. Total Cost: $${String.format(Locale.US, "%,.2f", estimatedCost)}",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmitOrder(sharesCount, selectedOrderType) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+            ) {
+                Text("SUBMIT BUY ORDER")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
