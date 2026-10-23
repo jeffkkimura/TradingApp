@@ -117,7 +117,7 @@ class TradingViewModel : ViewModel() {
     }
 
     /**
-     * Places a manual trade order immediately.
+     * Places a trade order both in simulated memory and submits directly to Alpaca Brokerage API.
      */
     fun placeManualTrade(shares: Double, orderType: OrderType) {
         val state = _uiState.value
@@ -154,6 +154,19 @@ class TradingViewModel : ViewModel() {
                     portfolioCash = cash,
                     activePositions = activePosList,
                     showOrderDialog = false
+                )
+            }
+
+            // Submit order directly to Alpaca Brokerage API
+            viewModelScope.launch(Dispatchers.IO) {
+                com.example.tradingapp.data.AlpacaBrokerageService.submitAlpacaOrder(
+                    symbol = "SPY",
+                    qty = shares,
+                    action = TradeAction.BUY,
+                    orderType = orderType,
+                    entryPrice = priceWithSlippage,
+                    stopLossPrice = stopLoss,
+                    takeProfitPrice = takeProfit
                 )
             }
         }
