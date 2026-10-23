@@ -120,6 +120,7 @@ object BacktestEngine {
                     )
                     closedTrades.add(closed)
                     strategy.mlOptimizer.onTradeClosed(closed, bar, newsSentiment, bar.multiIndex)
+                    strategy.notifyTradeOutcome(closed.pnl > 0)
                     currentPosition = null
                 }
             }
@@ -184,6 +185,7 @@ object BacktestEngine {
                 )
                 closedTrades.add(closed)
                 strategy.mlOptimizer.onTradeClosed(closed, bar, newsSentiment, bar.multiIndex)
+                strategy.notifyTradeOutcome(closed.pnl > 0)
                 currentPosition = null
             }
 

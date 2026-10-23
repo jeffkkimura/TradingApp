@@ -70,11 +70,11 @@ data class MLModelWeights(
 
 data class MLOptimizationMetrics(
     val totalFeedbackCycles: Int = 0,
-    val modelAccuracyPct: Double = 0.0,
+    val modelAccuracyPct: Double = 52.0,
     val totalWeightUpdates: Int = 0,
     val avgTradeExpectancy: Double = 0.0,
     val adaptedBuyThreshold: Double = 0.50,
-    val recentWinRatePct: Double = 0.0
+    val recentWinRatePct: Double = 52.0
 )
 
 data class MarketBar(

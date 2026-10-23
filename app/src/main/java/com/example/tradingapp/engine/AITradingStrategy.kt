@@ -12,7 +12,7 @@ import kotlin.math.max
 class AITradingStrategy(
     val maxDailyTrades: Int = 2,
     var buyConfidenceThreshold: Double = 0.50,
-    val riskPerTradePct: Double = 0.015,
+    val baseRiskPerTradePct: Double = 0.015,
     val atrStopLossMultiplier: Double = 2.5,
     val atrTakeProfitMultiplier: Double = 4.5,
     val preferredOrderType: OrderType = OrderType.HYBRID_SMART_ROUTING,
@@ -21,30 +21,66 @@ class AITradingStrategy(
 
     private var lastTradeDate: String = ""
     private var tradesTodayCount: Int = 0
+    private var consecutiveLossesCount: Int = 0
+    private var cooldownDaysRemaining: Int = 0
 
     fun resetDailyLimit() {
         lastTradeDate = ""
         tradesTodayCount = 0
+        consecutiveLossesCount = 0
+        cooldownDaysRemaining = 0
         mlOptimizer.reset()
     }
 
+    fun notifyTradeOutcome(isWin: Boolean) {
+        if (isWin) {
+            consecutiveLossesCount = 0
+        } else {
+            consecutiveLossesCount++
+            if (consecutiveLossesCount >= 4) {
+                cooldownDaysRemaining = 2
+            }
+        }
+    }
+
     /**
-     * Evaluates current market bar, news sentiment, and multi-index breadth to produce a trade signal.
+     * Evaluates market bar, news sentiment, and multi-index breadth with Kelly Sizing & Capital Survival Filters.
      */
     fun evaluateSignal(
         currentBar: MarketBar,
         accountBalance: Double,
         activePositionsCount: Int,
         hasOpenPosition: Boolean = false,
-        newsSentiment: MacroNewsSentiment = MacroNewsSentiment()
+        newsSentiment: MacroNewsSentiment = MacroNewsSentiment(),
+        currentDrawdownPct: Double = 0.0
     ): TradeSignal {
         if (currentBar.date != lastTradeDate) {
             lastTradeDate = currentBar.date
             tradesTodayCount = 0
+            if (cooldownDaysRemaining > 0) cooldownDaysRemaining--
         }
 
         val regime = classifyMarketRegime(currentBar)
         val multiIndex = currentBar.multiIndex
+
+        if (cooldownDaysRemaining > 0) {
+            return TradeSignal(
+                action = TradeAction.HOLD,
+                symbol = "SPY_AI",
+                entryPrice = currentBar.close,
+                stopLoss = 0.0,
+                takeProfit = 0.0,
+                positionSize = 0.0,
+                confidenceScore = 0.0,
+                reasoning = "Capital Preservation Cooldown ($cooldownDaysRemaining days remaining after $consecutiveLossesCount losses).",
+                date = currentBar.date,
+                timestamp = currentBar.timestamp,
+                regime = regime,
+                macroSentiment = newsSentiment,
+                multiIndex = multiIndex,
+                orderType = preferredOrderType
+            )
+        }
 
         if (tradesTodayCount >= maxDailyTrades) {
             return TradeSignal(
@@ -66,7 +102,18 @@ class AITradingStrategy(
         }
 
         val aiScore = mlOptimizer.predictConfidenceScore(currentBar, newsSentiment, multiIndex)
-        val adaptedThreshold = mlOptimizer.getOptimizationMetrics().adaptedBuyThreshold
+        val mlMetrics = mlOptimizer.getOptimizationMetrics()
+        val adaptedThreshold = mlMetrics.adaptedBuyThreshold
+
+        // Fractional Kelly Sizing
+        val winRateFrac = (mlMetrics.recentWinRatePct / 100.0).coerceIn(0.40, 0.75)
+        val winLossRatio = atrTakeProfitMultiplier / atrStopLossMultiplier
+        val fullKelly = if (winLossRatio > 0) (winRateFrac * winLossRatio - (1.0 - winRateFrac)) / winLossRatio else 0.10
+        var optimalRiskPct = (baseRiskPerTradePct * (0.85 + (fullKelly * 0.30))).coerceIn(0.01, 0.025)
+
+        if (currentDrawdownPct > 12.0) {
+            optimalRiskPct *= 0.50
+        }
 
         val isConfirmedAbove200Ema = currentBar.close >= (currentBar.ema200 * 1.005)
         val isConfirmedBelow200Ema = currentBar.close <= (currentBar.ema200 * 0.995)
@@ -84,7 +131,7 @@ class AITradingStrategy(
                 tradesTodayCount++
                 val stopLoss = currentBar.close - (currentBar.atr * atrStopLossMultiplier)
                 val takeProfit = currentBar.close + (currentBar.atr * atrTakeProfitMultiplier)
-                val riskAmount = accountBalance * riskPerTradePct
+                val riskAmount = accountBalance * optimalRiskPct
                 val riskPerShare = max(0.5, currentBar.close - stopLoss)
                 val shares = (riskAmount / riskPerShare)
 
@@ -96,7 +143,7 @@ class AITradingStrategy(
                     takeProfit = takeProfit,
                     positionSize = shares,
                     confidenceScore = aiScore,
-                    reasoning = "ML Score: ${String.format(Locale.US, "%.1f", aiScore * 100)}% (${preferredOrderType.label.take(22)}). Breadth: ${String.format(Locale.US, "%.0f", multiIndex.breadthScore * 100)}%. News: ${newsSentiment.fedPolicy.label}.",
+                    reasoning = "Kelly Risk (${String.format(Locale.US, "%.2f", optimalRiskPct * 100)}%). ML Score: ${String.format(Locale.US, "%.0f", aiScore * 100)}%. Breadth: ${String.format(Locale.US, "%.0f", multiIndex.breadthScore * 100)}%.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,

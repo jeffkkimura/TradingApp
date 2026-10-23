@@ -198,6 +198,7 @@ class TradingViewModel : ViewModel() {
 
                 closedTradeList.add(0, closed)
                 aiStrategy.mlOptimizer.onTradeClosed(closed, bar, state.activeNewsSentiment, bar.multiIndex)
+                aiStrategy.notifyTradeOutcome(closed.pnl > 0)
                 iterator.remove()
             }
         }

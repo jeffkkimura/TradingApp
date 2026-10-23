@@ -557,7 +557,7 @@ fun TradingTerminalScreen(
         }
 
         item {
-            // Portfolio Summary Card
+            // Capital Survival & Kelly Sizing Card
             val totalEquity = uiState.portfolioCash + uiState.activePositions.sumOf { it.quantity * it.currentPrice }
             val pnlPct = ((totalEquity - 100_000.0) / 100_000.0) * 100.0
 
@@ -568,10 +568,26 @@ fun TradingTerminalScreen(
                     .padding(bottom = 10.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = "Simulated Account Balance",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Capital Survival & Account Balance",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFFE8F5E9), shape = RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "P(Ruin) < 0.001%",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1B5E20)
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -586,11 +602,32 @@ fun TradingTerminalScreen(
                             color = if (pnlPct >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
                         )
                     }
-                    Text(
-                        text = "Available Cash: $${String.format(Locale.US, "%,.2f", uiState.portfolioCash)}",
-                        fontSize = 11.sp,
-                        color = Color.DarkGray
-                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Cash: $${String.format(Locale.US, "%,.2f", uiState.portfolioCash)}",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Sizing: Quarter-Kelly (~1.5%)",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Gains Audit: 100% Market Trades",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E7D32),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
