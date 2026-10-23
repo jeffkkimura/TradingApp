@@ -44,7 +44,7 @@ class AITradingStrategy(
     }
 
     /**
-     * Evaluates market bar, news sentiment, and multi-index breadth with Kelly Sizing & Capital Survival Filters.
+     * Evaluates market bar, TradingView SuperTrend PineScript confluence, news, and multi-index breadth.
      */
     fun evaluateSignal(
         currentBar: MarketBar,
@@ -52,7 +52,8 @@ class AITradingStrategy(
         activePositionsCount: Int,
         hasOpenPosition: Boolean = false,
         newsSentiment: MacroNewsSentiment = MacroNewsSentiment(),
-        currentDrawdownPct: Double = 0.0
+        currentDrawdownPct: Double = 0.0,
+        prevBar: MarketBar? = null
     ): TradeSignal {
         if (currentBar.date != lastTradeDate) {
             lastTradeDate = currentBar.date
@@ -62,6 +63,7 @@ class AITradingStrategy(
 
         val regime = classifyMarketRegime(currentBar)
         val multiIndex = currentBar.multiIndex
+        val tvAnalysis = TradingViewConfluenceEngine.analyzeBar(currentBar, prevBar)
 
         if (cooldownDaysRemaining > 0) {
             return TradeSignal(
@@ -105,6 +107,9 @@ class AITradingStrategy(
         val mlMetrics = mlOptimizer.getOptimizationMetrics()
         val adaptedThreshold = mlMetrics.adaptedBuyThreshold
 
+        // Combine ML Model Score with TradingView SuperTrend Confluence Score
+        val combinedScore = (aiScore * 0.60) + (tvAnalysis.confluenceScore * 0.40)
+
         // Fractional Kelly Sizing
         val winRateFrac = (mlMetrics.recentWinRatePct / 100.0).coerceIn(0.40, 0.75)
         val winLossRatio = atrTakeProfitMultiplier / atrStopLossMultiplier
@@ -122,12 +127,13 @@ class AITradingStrategy(
                 isConfirmedBelow200Ema ||
                 (currentBar.close < currentBar.ema50 && currentBar.rsi < 38.0) ||
                 currentBar.rsi > 80.0 ||
-                newsSentiment.sentimentScore < -0.40
+                newsSentiment.sentimentScore < -0.40 ||
+                tvAnalysis.signal == TradingViewSignal.BEARISH_CONFLUENCE
         )
 
         return when {
-            // BUY Signal (New Entry)
-            aiScore >= adaptedThreshold && isConfirmedAbove200Ema && !hasOpenPosition && activePositionsCount < 2 && newsSentiment.sentimentScore >= -0.25 -> {
+            // BUY Signal (New Entry): Combines ML + TradingView SuperTrend Confluence
+            combinedScore >= adaptedThreshold && isConfirmedAbove200Ema && !hasOpenPosition && activePositionsCount < 2 && newsSentiment.sentimentScore >= -0.25 -> {
                 tradesTodayCount++
                 val stopLoss = currentBar.close - (currentBar.atr * atrStopLossMultiplier)
                 val takeProfit = currentBar.close + (currentBar.atr * atrTakeProfitMultiplier)
@@ -142,8 +148,8 @@ class AITradingStrategy(
                     stopLoss = stopLoss,
                     takeProfit = takeProfit,
                     positionSize = shares,
-                    confidenceScore = aiScore,
-                    reasoning = "Kelly Risk (${String.format(Locale.US, "%.2f", optimalRiskPct * 100)}%). ML Score: ${String.format(Locale.US, "%.0f", aiScore * 100)}%. Breadth: ${String.format(Locale.US, "%.0f", multiIndex.breadthScore * 100)}%.",
+                    confidenceScore = combinedScore,
+                    reasoning = "TradingView SuperTrend + ML Score: ${String.format(Locale.US, "%.0f", combinedScore * 100)}%. Alpaca Order Routed. TV Confluence: ${tvAnalysis.signal.name}.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
@@ -163,8 +169,8 @@ class AITradingStrategy(
                     stopLoss = 0.0,
                     takeProfit = 0.0,
                     positionSize = 0.0,
-                    confidenceScore = 1.0 - aiScore,
-                    reasoning = "AI Exit Trigger: ${if (newsSentiment.sentimentScore < -0.40) "Macro News Risk Shock (${newsSentiment.headline.take(25)}...)" else if (isConfirmedBelow200Ema) "Confirmed Below 200-EMA" else "Trend Breakdown (< 50 EMA)"}.",
+                    confidenceScore = 1.0 - combinedScore,
+                    reasoning = "TradingView Exit: ${if (tvAnalysis.signal == TradingViewSignal.BEARISH_CONFLUENCE) "SuperTrend Bearish Reversal" else if (newsSentiment.sentimentScore < -0.40) "Macro News Risk Shock" else "Below 200-EMA"}.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
@@ -182,8 +188,8 @@ class AITradingStrategy(
                     stopLoss = 0.0,
                     takeProfit = 0.0,
                     positionSize = 0.0,
-                    confidenceScore = aiScore,
-                    reasoning = if (newsSentiment.sentimentScore < -0.25) "Macro News Risk Filter Active (${newsSentiment.headline.take(25)}...)" else if (currentBar.close < currentBar.ema200) "Secular Bear Regime (Below 200-EMA) - Cash Preserved." else "Scanning ML setup.",
+                    confidenceScore = combinedScore,
+                    reasoning = if (newsSentiment.sentimentScore < -0.25) "Macro News Risk Filter Active (${newsSentiment.headline.take(25)}...)" else if (currentBar.close < currentBar.ema200) "Secular Bear Regime (Below 200-EMA) - Cash Preserved." else "TradingView PineScript scanning setup.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,

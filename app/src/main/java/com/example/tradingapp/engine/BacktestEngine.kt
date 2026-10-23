@@ -127,12 +127,14 @@ object BacktestEngine {
 
             // 2. Evaluate Strategy Signal
             val openPosCount = if (currentPosition != null) 1 else 0
+            val prevBar = bars.getOrNull(bars.indexOf(bar) - 1)
             val signal = strategy.evaluateSignal(
                 currentBar = bar,
                 accountBalance = cash + (currentPosition?.unrealizedPnl ?: 0.0),
                 activePositionsCount = openPosCount,
                 hasOpenPosition = (currentPosition != null),
-                newsSentiment = newsSentiment
+                newsSentiment = newsSentiment,
+                prevBar = prevBar
             )
 
             // 3. Process BUY / SELL Signal Executions

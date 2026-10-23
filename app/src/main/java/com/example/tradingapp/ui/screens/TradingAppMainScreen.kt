@@ -450,6 +450,46 @@ fun TradingTerminalScreen(
         }
 
         item {
+            // Alpaca & TradingView PineScript Bridge Banner
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "TradingView PineScript + Alpaca Bridge",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0D47A1),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFFC8E6C9), shape = RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Alpaca Connected",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1B5E20)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "SuperTrend Volatility Bands + RSI-EMA Crossover -> Alpaca REST Bracket Order",
+                        fontSize = 10.sp,
+                        color = Color.DarkGray
+                    )
+                }
+            }
+        }
+
+        item {
             // Market Price & Multi-Index Breadth Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
