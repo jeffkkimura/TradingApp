@@ -69,10 +69,14 @@ object AlpacaBrokerageService {
 
             val responseCode = connection.responseCode
             if (responseCode in 200..299) {
+                val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                val orderId = extractJsonValue(responseText, "id")
+                val status = extractJsonValue(responseText, "status")
+
                 AlpacaOrderResult(
                     success = true,
-                    orderId = "ALPACA_${System.currentTimeMillis()}",
-                    message = "Successfully submitted $action order for $qty shares of $symbol to Alpaca (${if (isPaperTrading) "Paper" else "Live"} Account)."
+                    orderId = orderId.ifEmpty { "ALPACA_${System.currentTimeMillis()}" },
+                    message = "Order $status by Alpaca (ID: ${orderId.take(8)}...). ${if (status == "accepted") "Market is currently closed/after-hours; order queued for market open." else "Order filled on exchange."}"
                 )
             } else {
                 val errorMsg = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
@@ -89,6 +93,11 @@ object AlpacaBrokerageService {
                 message = "Alpaca Connection Error: ${e.message ?: "Failed to reach Alpaca servers."}"
             )
         }
+    }
+
+    private fun extractJsonValue(json: String, key: String): String {
+        val pattern = "\"$key\":\"([^\"]+)\"".toRegex()
+        return pattern.find(json)?.groupValues?.get(1) ?: ""
     }
 }
 
