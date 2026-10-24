@@ -7,6 +7,13 @@ enum class MarketRegime(val label: String, val description: String) {
     HIGH_VOLATILITY("High Volatility", "Elevated ATR & market uncertainty; risk off")
 }
 
+enum class DownturnSafetyLevel(val label: String, val action: String) {
+    LEVEL_0_NORMAL("Level 0: Normal Market", "Full Quarter-Kelly trade execution active"),
+    LEVEL_1_MILD_CHOP("Level 1: Mild Chop Warning", "Position sizing reduced 50%; high signal threshold required"),
+    LEVEL_2_SECULAR_BEAR("Level 2: Secular Bear Shield", "Below 200-EMA; 100% Cash Allocation (Long Entries Frozen)"),
+    LEVEL_3_CRASH_LIQUIDATION("Level 3: Emergency Panic Circuit Breaker", "Volatility shock > 3.5%; Immediate open position liquidation")
+}
+
 enum class TradeAction {
     BUY,
     SELL,
@@ -120,7 +127,8 @@ data class TradeSignal(
     val regime: MarketRegime = MarketRegime.BULL_TREND,
     val macroSentiment: MacroNewsSentiment = MacroNewsSentiment(),
     val multiIndex: MultiIndexData = MultiIndexData(0.0, 0.0, 0.0, false, false, false, 0.0),
-    val orderType: OrderType = OrderType.HYBRID_SMART_ROUTING
+    val orderType: OrderType = OrderType.HYBRID_SMART_ROUTING,
+    val downturnSafety: DownturnSafetyLevel = DownturnSafetyLevel.LEVEL_0_NORMAL
 )
 
 data class TradePosition(

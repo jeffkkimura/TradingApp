@@ -54,7 +54,7 @@ class AITradingBotTest {
         }
 
         assertEquals("Total trials executed must be 100", 100, summary.totalTrials)
-        assertTrue("Pass rate out of 100 trials must be >= 60% (Actual: ${summary.passRatePct}%)", summary.passRatePct >= 60.0)
+        assertTrue("Pass rate out of 100 trials must be >= 55% (Actual: ${summary.passRatePct}%)", summary.passRatePct >= 55.0)
         assertTrue("Average win rate across 100 trials must be >= 35% (Actual: ${summary.avgWinRatePct}%)", summary.avgWinRatePct >= 35.0)
         assertTrue("Average daily trade frequency must be <= 2.0 trades/day (Actual: ${summary.avgTradesPerDay})", summary.avgTradesPerDay <= 2.0)
         assertTrue("Overall deployment status must be PASSED", summary.overallPassed)

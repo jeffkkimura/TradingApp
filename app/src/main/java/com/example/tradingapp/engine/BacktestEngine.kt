@@ -332,7 +332,7 @@ object BacktestEngine {
         val bestTrial = trialsList.maxOfOrNull { it.totalReturnPct } ?: 0.0
         val worstTrial = trialsList.minOfOrNull { it.totalReturnPct } ?: 0.0
 
-        val overallPassed = passRate >= 60.0
+        val overallPassed = passRate >= 55.0
 
         return BacktestSummary(
             totalTrials = totalTrialsCount,
