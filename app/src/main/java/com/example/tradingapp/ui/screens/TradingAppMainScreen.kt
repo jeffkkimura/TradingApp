@@ -24,6 +24,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -404,6 +405,18 @@ fun TradingTerminalScreen(
         )
     }
 
+    if (uiState.showAlpacaSettingsDialog) {
+        AlpacaAccountSettingsDialog(
+            currentApiKey = uiState.alpacaApiKey,
+            currentSecretKey = uiState.alpacaSecretKey,
+            isPaper = uiState.isPaperTrading,
+            onDismiss = { viewModel.toggleAlpacaSettingsDialog(false) },
+            onSave = { key, secret, paper ->
+                viewModel.saveAlpacaCredentials(key, secret, paper)
+            }
+        )
+    }
+
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item {
             // Controls row
@@ -469,10 +482,11 @@ fun TradingTerminalScreen(
                         Box(
                             modifier = Modifier
                                 .background(Color(0xFFC8E6C9), shape = RoundedCornerShape(6.dp))
+                                .clickable { viewModel.toggleAlpacaSettingsDialog(true) }
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "Alpaca Connected",
+                                text = if (uiState.isPaperTrading) "Alpaca Paper (Link Key)" else "Alpaca LIVE (Linked)",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1B5E20)
@@ -791,6 +805,87 @@ fun TradingTerminalScreen(
             }
         }
     }
+}
+
+@Composable
+fun AlpacaAccountSettingsDialog(
+    currentApiKey: String,
+    currentSecretKey: String,
+    isPaper: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (apiKey: String, secretKey: String, isPaper: Boolean) -> Unit
+) {
+    var keyText by remember { mutableStateOf(currentApiKey) }
+    var secretText by remember { mutableStateOf(currentSecretKey) }
+    var paperMode by remember { mutableStateOf(isPaper) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Link Alpaca Brokerage Account",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Enter your free Alpaca API Key and Secret Key to route trades directly to your account.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.DarkGray
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = keyText,
+                    onValueChange = { keyText = it },
+                    label = { Text("APCA API Key ID", fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = secretText,
+                    onValueChange = { secretText = it },
+                    label = { Text("APCA Secret Key", fontSize = 11.sp) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Account Mode: ",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Button(
+                        onClick = { paperMode = !paperMode },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (paperMode) Color(0xFF1565C0) else Color(0xFFC62828)
+                        )
+                    ) {
+                        Text(if (paperMode) "Paper Sandbox ($100k)" else "LIVE Real Money", fontSize = 10.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(keyText, secretText, paperMode) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("SAVE & LINK ACCOUNT")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

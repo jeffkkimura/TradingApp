@@ -1,8 +1,8 @@
 package com.example.tradingapp.data
 
 data class AlpacaConfig(
-    val apiKey: String = "PK_PAPER_DEMO_KEY_2025",
-    val apiSecret: String = "SK_PAPER_DEMO_SECRET_2025",
+    val apiKey: String = "PKZBRZTKZ5A6IA4FPZBIKMXHOS",
+    val apiSecret: String = "3ZkzAZWQzTMgiviBDLtT6vmrwCNbt1LxmdF4TeorQ3Ae",
     val isPaperTrading: Boolean = true,
     val isConnected: Boolean = true,
     val accountEquity: Double = 100_000.0,

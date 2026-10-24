@@ -15,8 +15,8 @@ object AlpacaBrokerageService {
     private const val LIVE_BASE_URL = "https://api.alpaca.markets/v2"
 
     var isPaperTrading: Boolean = true
-    var apiKey: String = "PK_SANDBOX_DEMO_KEY"
-    var apiSecret: String = "SECRET_SANDBOX_DEMO_KEY"
+    var apiKey: String = "PKZBRZTKZ5A6IA4FPZBIKMXHOS"
+    var apiSecret: String = "3ZkzAZWQzTMgiviBDLtT6vmrwCNbt1LxmdF4TeorQ3Ae"
 
     private val activeBaseUrl: String
         get() = if (isPaperTrading) PAPER_BASE_URL else LIVE_BASE_URL

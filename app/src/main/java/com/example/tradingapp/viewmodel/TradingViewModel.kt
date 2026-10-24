@@ -2,6 +2,7 @@ package com.example.tradingapp.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.tradingapp.data.AlpacaBrokerageService
 import com.example.tradingapp.data.HistoricalDataRepository
 import com.example.tradingapp.data.NewsRepository
 import com.example.tradingapp.engine.AITradingStrategy
@@ -51,8 +52,13 @@ data class TradingUiState(
     // Strategy & Historical Regimes
     val epochSummaries: List<EpochPerformance> = emptyList(),
 
-    // Manual Trade Dialog
-    val showOrderDialog: Boolean = false
+    // Dialogs & Alpaca Account
+    val showOrderDialog: Boolean = false,
+    val showAlpacaSettingsDialog: Boolean = false,
+    val alpacaApiKey: String = AlpacaBrokerageService.apiKey,
+    val alpacaSecretKey: String = AlpacaBrokerageService.apiSecret,
+    val isPaperTrading: Boolean = AlpacaBrokerageService.isPaperTrading,
+    val isAlpacaConnected: Boolean = true
 )
 
 class TradingViewModel : ViewModel() {
@@ -89,6 +95,26 @@ class TradingViewModel : ViewModel() {
 
     fun toggleOrderDialog(show: Boolean) {
         _uiState.update { it.copy(showOrderDialog = show) }
+    }
+
+    fun toggleAlpacaSettingsDialog(show: Boolean) {
+        _uiState.update { it.copy(showAlpacaSettingsDialog = show) }
+    }
+
+    fun saveAlpacaCredentials(key: String, secret: String, isPaper: Boolean) {
+        AlpacaBrokerageService.apiKey = key
+        AlpacaBrokerageService.apiSecret = secret
+        AlpacaBrokerageService.isPaperTrading = isPaper
+
+        _uiState.update {
+            it.copy(
+                alpacaApiKey = key,
+                alpacaSecretKey = secret,
+                isPaperTrading = isPaper,
+                isAlpacaConnected = true,
+                showAlpacaSettingsDialog = false
+            )
+        }
     }
 
     fun getRecentBarsForChart(): List<MarketBar> {
@@ -157,9 +183,8 @@ class TradingViewModel : ViewModel() {
                 )
             }
 
-            // Submit order directly to Alpaca Brokerage API
             viewModelScope.launch(Dispatchers.IO) {
-                com.example.tradingapp.data.AlpacaBrokerageService.submitAlpacaOrder(
+                AlpacaBrokerageService.submitAlpacaOrder(
                     symbol = "SPY",
                     qty = shares,
                     action = TradeAction.BUY,
@@ -365,7 +390,8 @@ class TradingViewModel : ViewModel() {
                 equityHistory = if (initialBar != null) listOf(Pair(initialBar.date, 100_000.0)) else emptyList(),
                 mlModelWeights = aiStrategy.mlOptimizer.weights,
                 mlMetrics = aiStrategy.mlOptimizer.getOptimizationMetrics(),
-                showOrderDialog = false
+                showOrderDialog = false,
+                showAlpacaSettingsDialog = false
             )
         }
     }
