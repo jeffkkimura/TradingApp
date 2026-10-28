@@ -70,13 +70,28 @@ class TradingViewModel : ViewModel() {
     private val aiStrategy = AITradingStrategy(maxDailyTrades = 2)
 
     init {
-        val startIdx = if (allBars.size > 500) allBars.size - 300 else 0
+        // Set current market bar to October 27, 2026 (or latest bar)
+        val oct2026Idx = allBars.indexOfFirst { it.date == "2026-10-27" }
+        val startIdx = if (oct2026Idx >= 0) oct2026Idx else if (allBars.isNotEmpty()) allBars.size - 1 else 0
         val initialBar = if (allBars.isNotEmpty()) allBars[startIdx] else null
+
+        val initialSignal = if (initialBar != null) {
+            val prevBar = if (startIdx > 0) allBars[startIdx - 1] else null
+            aiStrategy.evaluateSignal(
+                currentBar = initialBar,
+                accountBalance = 100_000.0,
+                activePositionsCount = 0,
+                hasOpenPosition = false,
+                newsSentiment = NewsRepository.getDefaultMacroNews(),
+                prevBar = prevBar
+            )
+        } else null
 
         _uiState.update {
             it.copy(
                 currentBarIndex = startIdx,
                 currentBar = initialBar,
+                todaySignal = initialSignal,
                 equityHistory = if (initialBar != null) listOf(Pair(initialBar.date, 100_000.0)) else emptyList(),
                 epochSummaries = HistoricalDataRepository.getHistoricalEpochSummaries(),
                 mlModelWeights = aiStrategy.mlOptimizer.weights,
@@ -132,12 +147,14 @@ class TradingViewModel : ViewModel() {
     private fun evaluateTodaySignal() {
         val state = _uiState.value
         val bar = state.currentBar ?: return
+        val prevBar = if (state.currentBarIndex > 0) allBars[state.currentBarIndex - 1] else null
         val signal = aiStrategy.evaluateSignal(
             currentBar = bar,
             accountBalance = state.portfolioCash + state.activePositions.sumOf { it.unrealizedPnl },
             activePositionsCount = state.activePositions.size,
             hasOpenPosition = state.activePositions.isNotEmpty(),
-            newsSentiment = state.activeNewsSentiment
+            newsSentiment = state.activeNewsSentiment,
+            prevBar = prevBar
         )
         _uiState.update { it.copy(todaySignal = signal) }
     }
@@ -293,12 +310,14 @@ class TradingViewModel : ViewModel() {
         }
 
         // 2. Evaluate daily signal with active news sentiment
+        val prevBar = if (nextIndex > 0) allBars[nextIndex - 1] else null
         val signal = aiStrategy.evaluateSignal(
             currentBar = bar,
             accountBalance = cash + activePosList.sumOf { it.unrealizedPnl },
             activePositionsCount = activePosList.size,
             hasOpenPosition = activePosList.isNotEmpty(),
-            newsSentiment = state.activeNewsSentiment
+            newsSentiment = state.activeNewsSentiment,
+            prevBar = prevBar
         )
 
         // 3. Execute BUY or SELL signal
@@ -375,7 +394,8 @@ class TradingViewModel : ViewModel() {
     }
 
     fun resetSimulation() {
-        val startIdx = if (allBars.size > 500) allBars.size - 300 else 0
+        val oct2026Idx = allBars.indexOfFirst { it.date == "2026-10-27" }
+        val startIdx = if (oct2026Idx >= 0) oct2026Idx else if (allBars.isNotEmpty()) allBars.size - 1 else 0
         val initialBar = if (allBars.isNotEmpty()) allBars[startIdx] else null
         aiStrategy.resetDailyLimit()
 
