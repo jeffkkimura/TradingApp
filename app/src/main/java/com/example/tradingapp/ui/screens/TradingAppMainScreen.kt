@@ -65,10 +65,11 @@ data class AppBenchmarkItem(
 fun TradingAppMainScreen(viewModel: TradingViewModel) {
     val uiState by viewModel.uiState.collectAsState()
 
+    // Tab 0 is now Active Trades & Terminal (Primary View when opening app)
     val tabs = listOf(
+        "Active Trades",
         "AI Strategy",
         "100-Trial Suite",
-        "Terminal",
         "ML & News",
         "20 App Benchmarks",
         "2000-2025 Regimes"
@@ -89,7 +90,7 @@ fun TradingAppMainScreen(viewModel: TradingViewModel) {
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 Text(
-                    text = "20-App Benchmark Analysis • ML Adaptive Weights • Multi-Index (SPY/QQQ/DIA)",
+                    text = "Primary View: Active Trades • ML Adaptive Weights • Multi-Index (SPY/QQQ/DIA)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -122,12 +123,12 @@ fun TradingAppMainScreen(viewModel: TradingViewModel) {
                 .padding(12.dp)
         ) {
             when (uiState.selectedTab) {
-                0 -> StrategyOverviewScreen()
-                1 -> MonteCarloTestSuiteScreen(
+                0 -> TradingTerminalScreen( // Primary view on launch
                     viewModel = viewModel,
                     uiState = uiState
                 )
-                2 -> TradingTerminalScreen(
+                1 -> StrategyOverviewScreen()
+                2 -> MonteCarloTestSuiteScreen(
                     viewModel = viewModel,
                     uiState = uiState
                 )
@@ -281,7 +282,6 @@ fun MonteCarloTestSuiteScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Metrics Summary Row
         Row(modifier = Modifier.fillMaxWidth()) {
             MetricCard(
                 title = "Avg Return",
@@ -456,7 +456,121 @@ fun TradingTerminalScreen(
             }
         }
 
+        // PRIMARY VIEW AT TOP: Active Positions Card (Prominently displayed when app opens)
         item {
+            Text(
+                text = "PRIMARY VIEW: ACTIVE TRADES (${uiState.activePositions.size})",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+
+        if (uiState.activePositions.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "No open active positions right now.",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "AI Agent is actively scanning market setup (1-2 trades/day max). Tap 'Place Trade' above to submit an instant trade order.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.DarkGray
+                        )
+                    }
+                }
+            }
+        } else {
+            items(uiState.activePositions) { pos ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "ACTIVE ${pos.type} ${pos.symbol} (${String.format(Locale.US, "%.1f", pos.quantity)} shares)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "P&L: $${String.format(Locale.US, "%.2f", pos.unrealizedPnl)} (${String.format(Locale.US, "%.2f", pos.unrealizedPnlPct)}%)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (pos.unrealizedPnl >= 0) Color(0xFF1B5E20) else Color(0xFFC62828)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Entry: $${String.format(Locale.US, "%.2f", pos.entryPrice)} | Stop Loss: $${String.format(Locale.US, "%.2f", pos.stopLoss)} | Take Profit: $${String.format(Locale.US, "%.2f", pos.takeProfit)}",
+                            fontSize = 11.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                text = "Recent Closed Trades (${uiState.closedTrades.size})",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+        }
+
+        items(uiState.closedTrades.take(10)) { trade ->
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (trade.pnl >= 0) Color(0xFFF1F8E9) else Color(0xFFFFEBEE)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(8.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "${trade.type} ${trade.symbol} (${trade.entryDate} -> ${trade.exitDate})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Reason: ${trade.exitReason} | ML Score: ${String.format(Locale.US, "%.0f", trade.mlScoreAtEntry * 100)}%",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+
+                    Text(
+                        text = "${if (trade.pnl >= 0) "+" else ""}$${String.format(Locale.US, "%.2f", trade.pnl)} (${String.format(Locale.US, "%.1f", trade.returnPct)}%)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        color = if (trade.pnl >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                    )
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(10.dp))
             // Interactive Candlestick Chart
             val historyBars = viewModel.getRecentBarsForChart()
             com.example.tradingapp.ui.components.StockCandleChart(bars = historyBars)
@@ -486,7 +600,7 @@ fun TradingTerminalScreen(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = if (uiState.isPaperTrading) "Alpaca Paper (Link Key)" else "Alpaca LIVE (Linked)",
+                                text = if (uiState.isPaperTrading) "Alpaca Paper (Linked)" else "Alpaca LIVE (Linked)",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1B5E20)
@@ -565,71 +679,6 @@ fun TradingTerminalScreen(
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f)
                         )
-                    }
-                }
-            }
-        }
-
-        item {
-            // Today's AI Signal Card
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = when (signal?.action) {
-                        TradeAction.BUY -> Color(0xFFE8F5E9)
-                        TradeAction.SELL -> Color(0xFFFFEBEE)
-                        else -> Color(0xFFF5F5F5)
-                    }
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 10.dp)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Today's AI Trade Signal: ",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            text = signal?.action?.name ?: "HOLD",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = when (signal?.action) {
-                                TradeAction.BUY -> Color(0xFF2E7D32)
-                                TradeAction.SELL -> Color(0xFFC62828)
-                                else -> Color.Gray
-                            }
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(
-                            text = "ML Confidence: ${String.format(Locale.US, "%.1f", (signal?.confidenceScore ?: 0.0) * 100)}%",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = signal?.reasoning ?: "Evaluating market conditions...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.DarkGray
-                    )
-
-                    if (signal?.action == TradeAction.BUY) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "Stop Loss: $${String.format(Locale.US, "%.2f", signal.stopLoss)}",
-                                fontSize = 11.sp,
-                                color = Color(0xFFC62828),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = "Take Profit: $${String.format(Locale.US, "%.2f", signal.takeProfit)}",
-                                fontSize = 11.sp,
-                                color = Color(0xFF2E7D32),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
                     }
                 }
             }
@@ -723,7 +772,6 @@ fun TradingTerminalScreen(
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Days / Weeks / Months Selector Buttons
                     com.example.tradingapp.model.PeriodViewMode.entries.forEach { mode ->
                         val isSelected = uiState.periodViewMode == mode
                         Box(
@@ -789,100 +837,6 @@ fun TradingTerminalScreen(
                             }
                         }
                     }
-                }
-            }
-        }
-
-        item {
-            Text(
-                text = "Active Positions (${uiState.activePositions.size})",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-        }
-
-        if (uiState.activePositions.isEmpty()) {
-            item {
-                Text(
-                    text = "No open positions. AI agent is scanning setup (1-2 trades/day max).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-            }
-        } else {
-            items(uiState.activePositions) { pos ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp)
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row {
-                            Text(
-                                text = "BUY ${pos.symbol} (${String.format(Locale.US, "%.1f", pos.quantity)} shares)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = "P&L: $${String.format(Locale.US, "%.2f", pos.unrealizedPnl)} (${String.format(Locale.US, "%.1f", pos.unrealizedPnlPct)}%)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = if (pos.unrealizedPnl >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
-                            )
-                        }
-                        Text(
-                            text = "Entry: $${String.format(Locale.US, "%.2f", pos.entryPrice)} | SL: $${String.format(Locale.US, "%.2f", pos.stopLoss)} | TP: $${String.format(Locale.US, "%.2f", pos.takeProfit)}",
-                            fontSize = 10.sp,
-                            color = Color.DarkGray
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            Text(
-                text = "Recent Closed Trades (${uiState.closedTrades.size})",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
-        }
-
-        items(uiState.closedTrades.take(15)) { trade ->
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (trade.pnl >= 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(8.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "${trade.type} ${trade.symbol} (${trade.entryDate} -> ${trade.exitDate})",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Reason: ${trade.exitReason} | ML Score: ${String.format(Locale.US, "%.0f", trade.mlScoreAtEntry * 100)}%",
-                            fontSize = 10.sp,
-                            color = Color.DarkGray
-                        )
-                    }
-
-                    Text(
-                        text = "${if (trade.pnl >= 0) "+" else ""}$${String.format(Locale.US, "%.2f", trade.pnl)} (${String.format(Locale.US, "%.1f", trade.returnPct)}%)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = if (trade.pnl >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
-                    )
                 }
             }
         }

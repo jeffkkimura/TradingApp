@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class TradingUiState(
-    val selectedTab: Int = 0,
+    val selectedTab: Int = 0, // Tab 0 is now Active Trades & Terminal (Primary View on Launch)
     val isTestRunning: Boolean = false,
     val testProgress: Int = 0,
     val latestTrialResult: TrialResult? = null,
@@ -93,6 +93,7 @@ class TradingViewModel : ViewModel() {
 
         _uiState.update {
             it.copy(
+                selectedTab = 0, // Make Active Trades & Terminal primary view on open
                 currentBarIndex = startIdx,
                 currentBar = initialBar,
                 todaySignal = initialSignal,
@@ -187,7 +188,7 @@ class TradingViewModel : ViewModel() {
 
             PeriodViewMode.WEEKLY -> {
                 val weeklyList = mutableListOf<PeriodPerformanceSummary>()
-                val chunks = history.chunked(5) // Group 5 trading days into a trading week
+                val chunks = history.chunked(5)
                 for (chunkIdx in chunks.indices.reversed()) {
                     val chunk = chunks[chunkIdx]
                     val startDate = chunk.first().first
@@ -221,7 +222,7 @@ class TradingViewModel : ViewModel() {
 
             PeriodViewMode.MONTHLY -> {
                 val monthlyList = mutableListOf<PeriodPerformanceSummary>()
-                val groupedByMonth = history.groupBy { it.first.take(7) } // Group by "yyyy-MM"
+                val groupedByMonth = history.groupBy { it.first.take(7) }
 
                 for ((monthKey, monthBars) in groupedByMonth.entries.reversed()) {
                     val startDate = monthBars.first().first
@@ -517,6 +518,7 @@ class TradingViewModel : ViewModel() {
 
         _uiState.update {
             it.copy(
+                selectedTab = 0,
                 currentBarIndex = startIdx,
                 currentBar = initialBar,
                 portfolioCash = 100_000.0,
