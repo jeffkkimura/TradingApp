@@ -12,8 +12,8 @@ import kotlin.math.max
 
 class AITradingStrategy(
     val maxDailyTrades: Int = 2,
-    var buyConfidenceThreshold: Double = 0.50,
-    val baseRiskPerTradePct: Double = 0.015,
+    var buyConfidenceThreshold: Double = 0.48, // Configured for active 1-2 trades/day
+    val baseRiskPerTradePct: Double = 0.012, // 1.2% risk per position (up to 2 active)
     val atrStopLossMultiplier: Double = 2.5,
     val atrTakeProfitMultiplier: Double = 4.5,
     val preferredOrderType: OrderType = OrderType.HYBRID_SMART_ROUTING,
@@ -62,6 +62,7 @@ class AITradingStrategy(
 
     /**
      * Evaluates market bar, TradingView SuperTrend PineScript confluence, news, and multi-index breadth.
+     * Configured to actively place 1 to 2 trades per day (max 2 active positions).
      */
     fun evaluateSignal(
         currentBar: MarketBar,
@@ -125,7 +126,7 @@ class AITradingStrategy(
 
         val aiScore = mlOptimizer.predictConfidenceScore(currentBar, newsSentiment, multiIndex)
         val mlMetrics = mlOptimizer.getOptimizationMetrics()
-        val adaptedThreshold = mlMetrics.adaptedBuyThreshold
+        val adaptedThreshold = minOf(0.48, mlMetrics.adaptedBuyThreshold)
 
         val combinedScore = (aiScore * 0.60) + (tvAnalysis.confluenceScore * 0.40)
 
@@ -133,7 +134,7 @@ class AITradingStrategy(
         val winRateFrac = (mlMetrics.recentWinRatePct / 100.0).coerceIn(0.40, 0.75)
         val winLossRatio = atrTakeProfitMultiplier / atrStopLossMultiplier
         val fullKelly = if (winLossRatio > 0) (winRateFrac * winLossRatio - (1.0 - winRateFrac)) / winLossRatio else 0.10
-        var optimalRiskPct = (baseRiskPerTradePct * (0.85 + (fullKelly * 0.30))).coerceIn(0.01, 0.025)
+        var optimalRiskPct = (baseRiskPerTradePct * (0.85 + (fullKelly * 0.30))).coerceIn(0.008, 0.02)
 
         if (downturnLevel == DownturnSafetyLevel.LEVEL_1_MILD_CHOP) {
             optimalRiskPct *= 0.50
@@ -151,8 +152,8 @@ class AITradingStrategy(
         )
 
         return when {
-            // BUY Signal (New Entry): Blocked during Secular Bear or Crash Liquidation
-            combinedScore >= adaptedThreshold && isConfirmedAbove200Ema && downturnLevel <= DownturnSafetyLevel.LEVEL_1_MILD_CHOP && !hasOpenPosition && activePositionsCount < 2 && newsSentiment.sentimentScore >= -0.25 -> {
+            // BUY Signal (New Entry): Allows up to 2 active positions simultaneously (activePositionsCount < 2)
+            combinedScore >= adaptedThreshold && isConfirmedAbove200Ema && downturnLevel <= DownturnSafetyLevel.LEVEL_1_MILD_CHOP && activePositionsCount < maxDailyTrades && newsSentiment.sentimentScore >= -0.25 -> {
                 tradesTodayCount++
                 val stopLoss = currentBar.close - (currentBar.atr * atrStopLossMultiplier)
                 val takeProfit = currentBar.close + (currentBar.atr * atrTakeProfitMultiplier)
@@ -168,7 +169,7 @@ class AITradingStrategy(
                     takeProfit = takeProfit,
                     positionSize = shares,
                     confidenceScore = combinedScore,
-                    reasoning = "Kelly Risk (${String.format(Locale.US, "%.2f", optimalRiskPct * 100)}%). ML Score: ${String.format(Locale.US, "%.0f", combinedScore * 100)}%. ${downturnLevel.label}.",
+                    reasoning = "Trade #${tradesTodayCount}/2 Today. Kelly Risk (${String.format(Locale.US, "%.2f", optimalRiskPct * 100)}%). ML Score: ${String.format(Locale.US, "%.0f", combinedScore * 100)}%.",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
@@ -210,7 +211,7 @@ class AITradingStrategy(
                     takeProfit = 0.0,
                     positionSize = 0.0,
                     confidenceScore = combinedScore,
-                    reasoning = if (downturnLevel == DownturnSafetyLevel.LEVEL_2_SECULAR_BEAR) "Level 2 Secular Bear Shield Active (Below 200-EMA) - 100% Cash Allocation." else if (downturnLevel == DownturnSafetyLevel.LEVEL_3_CRASH_LIQUIDATION) "Level 3 Emergency Crash Circuit Breaker Active - Cash Preserved." else "Scanning setup.",
+                    reasoning = if (downturnLevel == DownturnSafetyLevel.LEVEL_2_SECULAR_BEAR) "Level 2 Secular Bear Shield Active (Below 200-EMA) - 100% Cash Allocation." else if (downturnLevel == DownturnSafetyLevel.LEVEL_3_CRASH_LIQUIDATION) "Level 3 Emergency Crash Circuit Breaker Active - Cash Preserved." else "Scanning setup (1-2 trades/day max).",
                     date = currentBar.date,
                     timestamp = currentBar.timestamp,
                     regime = regime,
