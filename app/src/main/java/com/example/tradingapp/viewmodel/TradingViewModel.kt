@@ -15,6 +15,8 @@ import com.example.tradingapp.model.MLOptimizationMetrics
 import com.example.tradingapp.model.MacroNewsSentiment
 import com.example.tradingapp.model.MarketBar
 import com.example.tradingapp.model.OrderType
+import com.example.tradingapp.model.PeriodPerformanceSummary
+import com.example.tradingapp.model.PeriodViewMode
 import com.example.tradingapp.model.TradeAction
 import com.example.tradingapp.model.TradePosition
 import com.example.tradingapp.model.TradeSignal
@@ -43,6 +45,9 @@ data class TradingUiState(
     val todaySignal: TradeSignal? = null,
     val equityHistory: List<Pair<String, Double>> = emptyList(),
 
+    // Period View Mode (Days, Weeks, Months)
+    val periodViewMode: PeriodViewMode = PeriodViewMode.DAILY,
+
     // Macro News & ML State
     val activeNewsSentiment: MacroNewsSentiment = NewsRepository.getDefaultMacroNews(),
     val newsPresets: List<MacroNewsSentiment> = NewsRepository.getMacroNewsPresets(),
@@ -70,7 +75,6 @@ class TradingViewModel : ViewModel() {
     private val aiStrategy = AITradingStrategy(maxDailyTrades = 2)
 
     init {
-        // Set current market bar to October 27, 2026 (or latest bar)
         val oct2026Idx = allBars.indexOfFirst { it.date == "2026-10-27" }
         val startIdx = if (oct2026Idx >= 0) oct2026Idx else if (allBars.isNotEmpty()) allBars.size - 1 else 0
         val initialBar = if (allBars.isNotEmpty()) allBars[startIdx] else null
@@ -108,6 +112,10 @@ class TradingViewModel : ViewModel() {
         _uiState.update { it.copy(selectedTab = tabIndex) }
     }
 
+    fun setPeriodViewMode(mode: PeriodViewMode) {
+        _uiState.update { it.copy(periodViewMode = mode) }
+    }
+
     fun toggleOrderDialog(show: Boolean) {
         _uiState.update { it.copy(showOrderDialog = show) }
     }
@@ -137,6 +145,114 @@ class TradingViewModel : ViewModel() {
         if (allBars.isEmpty() || idx < 0) return emptyList()
         val start = maxOf(0, idx - 40)
         return allBars.subList(start, minOf(allBars.size, idx + 1))
+    }
+
+    /**
+     * Calculates Daily, Weekly, or Monthly P&L performance records.
+     */
+    fun getPeriodPerformanceSummaries(): List<PeriodPerformanceSummary> {
+        val state = _uiState.value
+        val history = state.equityHistory
+        if (history.isEmpty()) return emptyList()
+
+        return when (state.periodViewMode) {
+            PeriodViewMode.DAILY -> {
+                val dailyList = mutableListOf<PeriodPerformanceSummary>()
+                for (i in history.indices) {
+                    val (date, currentVal) = history[i]
+                    val startVal = if (i == 0) 100_000.0 else history[i - 1].second
+                    val pnl = currentVal - startVal
+                    val pnlPct = if (startVal > 0) (pnl / startVal) * 100.0 else 0.0
+
+                    val tradesToday = state.closedTrades.filter { it.exitDate == date }
+                    val winCount = tradesToday.count { it.pnl > 0 }
+                    val winRate = if (tradesToday.isNotEmpty()) (winCount.toDouble() / tradesToday.size) * 100.0 else 0.0
+
+                    dailyList.add(
+                        0, PeriodPerformanceSummary(
+                            periodLabel = date,
+                            startDate = date,
+                            endDate = date,
+                            startingBalance = startVal,
+                            endingBalance = currentVal,
+                            pnlDollars = pnl,
+                            pnlPct = pnlPct,
+                            tradesCount = tradesToday.size,
+                            winRatePct = winRate
+                        )
+                    )
+                }
+                dailyList
+            }
+
+            PeriodViewMode.WEEKLY -> {
+                val weeklyList = mutableListOf<PeriodPerformanceSummary>()
+                val chunks = history.chunked(5) // Group 5 trading days into a trading week
+                for (chunkIdx in chunks.indices.reversed()) {
+                    val chunk = chunks[chunkIdx]
+                    val startDate = chunk.first().first
+                    val endDate = chunk.last().first
+                    val startVal = if (chunkIdx == 0) 100_000.0 else chunks[chunkIdx - 1].last().second
+                    val endVal = chunk.last().second
+                    val pnl = endVal - startVal
+                    val pnlPct = if (startVal > 0) (pnl / startVal) * 100.0 else 0.0
+
+                    val weekDates = chunk.map { it.first }.toSet()
+                    val weekTrades = state.closedTrades.filter { weekDates.contains(it.exitDate) }
+                    val winCount = weekTrades.count { it.pnl > 0 }
+                    val winRate = if (weekTrades.isNotEmpty()) (winCount.toDouble() / weekTrades.size) * 100.0 else 0.0
+
+                    weeklyList.add(
+                        PeriodPerformanceSummary(
+                            periodLabel = "Week of $startDate",
+                            startDate = startDate,
+                            endDate = endDate,
+                            startingBalance = startVal,
+                            endingBalance = endVal,
+                            pnlDollars = pnl,
+                            pnlPct = pnlPct,
+                            tradesCount = weekTrades.size,
+                            winRatePct = winRate
+                        )
+                    )
+                }
+                weeklyList
+            }
+
+            PeriodViewMode.MONTHLY -> {
+                val monthlyList = mutableListOf<PeriodPerformanceSummary>()
+                val groupedByMonth = history.groupBy { it.first.take(7) } // Group by "yyyy-MM"
+
+                for ((monthKey, monthBars) in groupedByMonth.entries.reversed()) {
+                    val startDate = monthBars.first().first
+                    val endDate = monthBars.last().first
+                    val startVal = monthBars.first().second
+                    val endVal = monthBars.last().second
+                    val pnl = endVal - startVal
+                    val pnlPct = if (startVal > 0) (pnl / startVal) * 100.0 else 0.0
+
+                    val monthDates = monthBars.map { it.first }.toSet()
+                    val monthTrades = state.closedTrades.filter { monthDates.contains(it.exitDate) }
+                    val winCount = monthTrades.count { it.pnl > 0 }
+                    val winRate = if (monthTrades.isNotEmpty()) (winCount.toDouble() / monthTrades.size) * 100.0 else 0.0
+
+                    monthlyList.add(
+                        PeriodPerformanceSummary(
+                            periodLabel = monthKey,
+                            startDate = startDate,
+                            endDate = endDate,
+                            startingBalance = startVal,
+                            endingBalance = endVal,
+                            pnlDollars = pnl,
+                            pnlPct = pnlPct,
+                            tradesCount = monthTrades.size,
+                            winRatePct = winRate
+                        )
+                    )
+                }
+                monthlyList
+            }
+        }
     }
 
     fun selectNewsPreset(news: MacroNewsSentiment) {

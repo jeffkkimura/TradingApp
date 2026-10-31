@@ -712,6 +712,88 @@ fun TradingTerminalScreen(
         }
 
         item {
+            // Period P&L Performance Section (Days, Weeks, Months Toggles)
+            val periodSummaries = viewModel.getPeriodPerformanceSummaries()
+
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "P&L Breakdown",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    // Days / Weeks / Months Selector Buttons
+                    com.example.tradingapp.model.PeriodViewMode.entries.forEach { mode ->
+                        val isSelected = uiState.periodViewMode == mode
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 4.dp)
+                                .background(
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable { viewModel.setPeriodViewMode(mode) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = mode.label,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else Color.Black
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                periodSummaries.take(10).forEach { item ->
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (item.pnlDollars >= 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(10.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.periodLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Start: $${String.format(Locale.US, "%,.2f", item.startingBalance)} -> End: $${String.format(Locale.US, "%,.2f", item.endingBalance)}",
+                                    fontSize = 10.sp,
+                                    color = Color.DarkGray
+                                )
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "${if (item.pnlDollars >= 0) "+" else ""}$${String.format(Locale.US, "%.2f", item.pnlDollars)} (${String.format(Locale.US, "%.2f", item.pnlPct)}%)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (item.pnlDollars >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                )
+                                Text(
+                                    text = "${item.tradesCount} Trades (${String.format(Locale.US, "%.0f", item.winRatePct)}% Win)",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             Text(
                 text = "Active Positions (${uiState.activePositions.size})",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),

@@ -20,6 +20,12 @@ enum class TradeAction {
     HOLD
 }
 
+enum class PeriodViewMode(val label: String) {
+    DAILY("Days"),
+    WEEKLY("Weeks"),
+    MONTHLY("Months")
+}
+
 enum class OrderType(val label: String, val description: String) {
     HYBRID_SMART_ROUTING("Hybrid Smart Routing (Recommended)", "Limit Order for Take Profit (Zero Slippage) + Market Order for Stop Loss"),
     LIMIT_ORDER_STRICT("Limit Orders Only", "Zero spread slippage on all exits; execution fill dependent on order book"),
@@ -82,6 +88,18 @@ data class MLOptimizationMetrics(
     val avgTradeExpectancy: Double = 0.0,
     val adaptedBuyThreshold: Double = 0.50,
     val recentWinRatePct: Double = 52.0
+)
+
+data class PeriodPerformanceSummary(
+    val periodLabel: String, // e.g., "Oct 27, 2026" or "Week 43, 2026" or "October 2026"
+    val startDate: String,
+    val endDate: String,
+    val startingBalance: Double,
+    val endingBalance: Double,
+    val pnlDollars: Double,
+    val pnlPct: Double,
+    val tradesCount: Int,
+    val winRatePct: Double
 )
 
 data class MarketBar(
